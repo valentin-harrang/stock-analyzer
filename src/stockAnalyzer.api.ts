@@ -151,28 +151,59 @@ async function fetchStockQuote(symbol: string): Promise<TrendingStock | null> {
 }
 
 async function fetchYahooValuationData(symbol: string): Promise<ValuationData> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1y&includePrePost=false`;
+  // First, get 52-week range from chart endpoint
+  const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1y&includePrePost=false`;
+  const chartResponse = await proxiedFetch(chartUrl);
+  const chartData = await chartResponse.json();
 
-  const response = await proxiedFetch(url);
-  const data = await response.json();
-
-  const result = data.chart?.result?.[0];
-  if (!result) {
+  const chartResult = chartData.chart?.result?.[0];
+  if (!chartResult) {
     throw new Error('Données de valorisation indisponibles');
   }
 
-  const meta = result.meta;
+  const meta = chartResult.meta;
 
-  return {
-    trailingPE: meta.trailingPE ?? null,
-    forwardPE: meta.forwardPE ?? null,
-    pegRatio: meta.pegRatio ?? null,
-    priceToBook: meta.priceToBook ?? null,
-    epsTrailingTwelveMonths: meta.epsTrailingTwelveMonths ?? null,
+  // Default values from chart data
+  const valuationData: ValuationData = {
+    trailingPE: null,
+    forwardPE: null,
+    pegRatio: null,
+    priceToBook: null,
+    epsTrailingTwelveMonths: null,
     fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh ?? 0,
     fiftyTwoWeekLow: meta.fiftyTwoWeekLow ?? 0,
     currentPrice: meta.regularMarketPrice ?? 0,
   };
+
+  // Try to get fundamental ratios from quoteSummary endpoint
+  try {
+    const summaryUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=summaryDetail,defaultKeyStatistics`;
+    const summaryResponse = await proxiedFetch(summaryUrl);
+    const summaryData = await summaryResponse.json();
+
+    const summaryDetail = summaryData.quoteSummary?.result?.[0]?.summaryDetail;
+    const keyStats = summaryData.quoteSummary?.result?.[0]?.defaultKeyStatistics;
+
+    if (summaryDetail) {
+      valuationData.trailingPE = summaryDetail.trailingPE?.raw ?? null;
+      valuationData.forwardPE = summaryDetail.forwardPE?.raw ?? null;
+    }
+
+    if (keyStats) {
+      valuationData.pegRatio = keyStats.pegRatio?.raw ?? null;
+      valuationData.priceToBook = keyStats.priceToBook?.raw ?? null;
+      valuationData.epsTrailingTwelveMonths = keyStats.trailingEps?.raw ?? null;
+      // Fallback for forwardPE if not in summaryDetail
+      if (valuationData.forwardPE === null) {
+        valuationData.forwardPE = keyStats.forwardPE?.raw ?? null;
+      }
+    }
+  } catch (e) {
+    console.error('Yahoo quoteSummary error:', e);
+    // Continue with chart data only
+  }
+
+  return valuationData;
 }
 
 interface FmpRatioResponse {
