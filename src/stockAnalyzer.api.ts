@@ -189,15 +189,30 @@ async function fetchFmpValuationData(symbol: string): Promise<Partial<ValuationD
   }
 
   try {
-    const url = `https://financialmodelingprep.com/api/v3/ratios-ttm/${encodeURIComponent(symbol)}?apikey=${FMP_API_KEY}`;
+    // Use the stable endpoint (legacy /api/v3/ is deprecated)
+    const url = `https://financialmodelingprep.com/stable/ratios-ttm?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_API_KEY}`;
     const response = await fetch(url);
-    const data: FmpRatioResponse[] = await response.json();
 
-    if (!data || data.length === 0) {
+    if (!response.ok) {
+      console.error('FMP API error:', response.status, response.statusText);
       return {};
     }
 
-    const ratios = data[0];
+    const data = await response.json();
+
+    // Handle error response from FMP
+    if (data && 'Error Message' in data) {
+      console.error('FMP API error:', data['Error Message']);
+      return {};
+    }
+
+    // Response can be an array or single object
+    const ratios: FmpRatioResponse | undefined = Array.isArray(data) ? data[0] : data;
+
+    if (!ratios) {
+      return {};
+    }
+
     return {
       trailingPE: ratios.peRatioTTM ?? null,
       pegRatio: ratios.pegRatioTTM ?? ratios.priceEarningsToGrowthRatioTTM ?? null,
