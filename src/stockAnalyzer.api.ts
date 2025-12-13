@@ -5,6 +5,7 @@ import type {
   Analysis,
   PriceData,
   Currency,
+  ValuationData,
 } from './stockAnalyzer.types';
 
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
@@ -146,6 +147,31 @@ async function fetchStockQuote(symbol: string): Promise<TrendingStock | null> {
   } catch {
     return null;
   }
+}
+
+export async function fetchValuationData(symbol: string): Promise<ValuationData> {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1y&includePrePost=false`;
+
+  const response = await proxiedFetch(url);
+  const data = await response.json();
+
+  const result = data.chart?.result?.[0];
+  if (!result) {
+    throw new Error('Données de valorisation indisponibles');
+  }
+
+  const meta = result.meta;
+
+  return {
+    trailingPE: meta.trailingPE ?? null,
+    forwardPE: meta.forwardPE ?? null,
+    pegRatio: meta.pegRatio ?? null,
+    priceToBook: meta.priceToBook ?? null,
+    epsTrailingTwelveMonths: meta.epsTrailingTwelveMonths ?? null,
+    fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh ?? 0,
+    fiftyTwoWeekLow: meta.fiftyTwoWeekLow ?? 0,
+    currentPrice: meta.regularMarketPrice ?? 0,
+  };
 }
 
 export async function fetchTrendingStocks(): Promise<TrendingStock[]> {

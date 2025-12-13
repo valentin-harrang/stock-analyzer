@@ -1,4 +1,4 @@
-import type { MACDResult } from './stockAnalyzer.types';
+import type { MACDResult, ValuationData, ValuationVerdict } from './stockAnalyzer.types';
 
 export function calculateEMA(prices: number[], period: number): number[] {
   const ema: number[] = [];
@@ -95,6 +95,106 @@ export function getVerdictStyle(verdict: string): string {
       return 'bg-green-900/30 border-green-500 text-green-400';
     case 'DÉFAVORABLE':
       return 'bg-red-900/30 border-red-500 text-red-400';
+    default:
+      return 'bg-orange-900/30 border-orange-500 text-orange-400';
+  }
+}
+
+export function calculateValuationVerdict(valuation: ValuationData): ValuationVerdict {
+  const { trailingPE, forwardPE, pegRatio, priceToBook } = valuation;
+
+  // Si pas assez de données, retourner indéterminé
+  const hasEnoughData = trailingPE !== null || pegRatio !== null || priceToBook !== null;
+  if (!hasEnoughData) {
+    return {
+      status: 'INDÉTERMINÉ',
+      emoji: '⚪',
+      color: 'gray',
+      explanation: 'Données insuffisantes pour évaluer la valorisation',
+    };
+  }
+
+  let score = 0;
+  const reasons: string[] = [];
+
+  // Analyse du PEG Ratio (le plus fiable)
+  if (pegRatio !== null) {
+    if (pegRatio < 1) {
+      score += 2;
+      reasons.push('PEG < 1 (croissance sous-évaluée)');
+    } else if (pegRatio > 2) {
+      score -= 2;
+      reasons.push('PEG > 2 (croissance surévaluée)');
+    } else if (pegRatio <= 1.5) {
+      score += 1;
+    }
+  }
+
+  // Analyse du P/E Trailing
+  if (trailingPE !== null) {
+    if (trailingPE < 15) {
+      score += 1;
+      reasons.push('P/E < 15 (valorisation attractive)');
+    } else if (trailingPE > 35) {
+      score -= 2;
+      reasons.push('P/E > 35 (valorisation élevée)');
+    } else if (trailingPE > 25) {
+      score -= 1;
+    }
+  }
+
+  // Comparaison P/E Forward vs Trailing (amélioration attendue)
+  if (forwardPE !== null && trailingPE !== null && forwardPE < trailingPE) {
+    score += 1;
+    reasons.push('P/E Forward < Trailing (amélioration prévue)');
+  }
+
+  // Analyse du Price to Book
+  if (priceToBook !== null) {
+    if (priceToBook < 1) {
+      score += 2;
+      reasons.push('P/B < 1 (sous la valeur comptable)');
+    } else if (priceToBook < 2) {
+      score += 1;
+    } else if (priceToBook > 5) {
+      score -= 1;
+      reasons.push('P/B > 5 (prime élevée)');
+    }
+  }
+
+  // Déterminer le verdict final
+  if (score >= 3) {
+    return {
+      status: 'SOUS-ÉVALUÉE',
+      emoji: '🟢',
+      color: 'green',
+      explanation: reasons.length > 0 ? reasons.join(' • ') : 'Ratios de valorisation attractifs',
+    };
+  } else if (score <= -2) {
+    return {
+      status: 'SURÉVALUÉE',
+      emoji: '🔴',
+      color: 'red',
+      explanation: reasons.length > 0 ? reasons.join(' • ') : 'Ratios de valorisation élevés',
+    };
+  } else {
+    return {
+      status: 'JUSTE VALEUR',
+      emoji: '🟠',
+      color: 'orange',
+      explanation: reasons.length > 0 ? reasons.join(' • ') : 'Valorisation dans les normes du marché',
+    };
+  }
+}
+
+export function getValuationVerdictStyle(status: string): string {
+  switch (status) {
+    case 'SOUS-ÉVALUÉE':
+      return 'bg-green-900/30 border-green-500 text-green-400';
+    case 'SURÉVALUÉE':
+      return 'bg-red-900/30 border-red-500 text-red-400';
+    case 'INDÉTERMINÉ':
+      return 'bg-slate-700/30 border-slate-500 text-slate-400';
     default:
       return 'bg-orange-900/30 border-orange-500 text-orange-400';
   }

@@ -45,9 +45,31 @@ export interface Analysis {
   negatives: string[];
 }
 
+export interface ValuationData {
+  trailingPE: number | null;
+  forwardPE: number | null;
+  pegRatio: number | null;
+  priceToBook: number | null;
+  epsTrailingTwelveMonths: number | null;
+  fiftyTwoWeekHigh: number;
+  fiftyTwoWeekLow: number;
+  currentPrice: number;
+}
+
+export type ValuationStatus = 'SOUS-ÉVALUÉE' | 'JUSTE VALEUR' | 'SURÉVALUÉE' | 'INDÉTERMINÉ';
+
+export interface ValuationVerdict {
+  status: ValuationStatus;
+  emoji: string;
+  color: string;
+  explanation: string;
+}
+
 export interface FullAnalysis {
   stock: StockData;
   indicators: TechnicalIndicators;
+  valuation: ValuationData;
+  valuationVerdict: ValuationVerdict;
   analysis: Analysis;
 }
 
