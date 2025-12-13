@@ -59,3 +59,12 @@ export interface PriceData {
   closes: number[];
   volumes: number[];
 }
+
+export type Currency = 'EUR' | 'USD' | 'GBP' | 'CHF';
+
+export const CURRENCIES: { value: Currency; label: string; symbol: string }[] = [
+  { value: 'EUR', label: 'Euro', symbol: '€' },
+  { value: 'USD', label: 'Dollar US', symbol: '$' },
+  { value: 'GBP', label: 'Livre Sterling', symbol: '£' },
+  { value: 'CHF', label: 'Franc Suisse', symbol: 'CHF' },
+];
