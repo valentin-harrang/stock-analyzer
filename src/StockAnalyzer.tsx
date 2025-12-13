@@ -1,20 +1,13 @@
-import { useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { useStockSearch } from './useStockSearch';
 import { useStockAnalysis } from './useStockAnalysis';
-import { getCurrencySymbol, getVerdictStyle, getValuationVerdictStyle } from './stockAnalyzer.utils';
-import { CURRENCIES } from './stockAnalyzer.types';
+import { getCurrencySymbol, getVerdictStyle } from './stockAnalyzer.utils';
 
 export function StockAnalyzer() {
-  const [searchParams, setSearchParams] = useSearchParams();
-
   const {
     loading,
     progress,
     error,
     analysis,
-    currency,
-    setCurrency,
     analyze,
     clearAnalysis,
     clearError,
@@ -37,16 +30,6 @@ export function StockAnalyzer() {
     clearError();
   });
 
-  // Handle symbol from URL (from trending page)
-  useEffect(() => {
-    const symbol = searchParams.get('symbol');
-    if (symbol && !loading && !analysis) {
-      setQuery(symbol);
-      analyze(symbol, null);
-      setSearchParams({});
-    }
-  }, [searchParams, loading, analysis, setQuery, analyze, setSearchParams]);
-
   const handleClear = () => {
     searchClear();
   };
@@ -59,63 +42,50 @@ export function StockAnalyzer() {
   const cs = (currency: string) => getCurrencySymbol(currency);
 
   return (
-    <div>
-      {/* Header */}
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold mb-2">📊 Analyseur Boursier</h1>
-        <p className="text-slate-400">
-          Analyse technique pour investissement long terme
-        </p>
-      </div>
+    <div className="min-h-screen bg-slate-900 text-white">
+      <div className="max-w-4xl mx-auto p-6">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold mb-2">📊 Analyseur Boursier</h1>
+          <p className="text-slate-400">
+            Analyse technique pour investissement long terme
+          </p>
+        </div>
 
         {/* Search */}
         <div className="relative mb-8">
-          <div className="flex flex-col gap-3">
-            <div className="flex gap-3">
-              <div className="relative flex-1">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value);
-                    clearError();
-                  }}
-                  onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleAnalyze();
-                    if (e.key === 'Escape') setShowSuggestions(false);
-                  }}
-                  placeholder="Rechercher (ex: Apple, LVMH, Tesla, ...)"
-                  className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500 text-lg pr-10"
-                  disabled={loading}
-                />
-                {searchLoading && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                  </div>
-                )}
-                {query && !loading && !searchLoading && (
-                  <button
-                    onClick={handleClear}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-              <select
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value as typeof currency)}
+          <div className="flex flex-col lg:flex-row gap-3">
+            <div className="relative flex-1">
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  clearError();
+                }}
+                onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleAnalyze();
+                  if (e.key === 'Escape') setShowSuggestions(false);
+                }}
+                placeholder="Rechercher (ex: Apple, LVMH, Tesla, ...)"
+                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500 text-lg pr-10"
                 disabled={loading}
-                className="px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500 text-lg cursor-pointer disabled:cursor-not-allowed"
-              >
-                {CURRENCIES.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.symbol} {c.value}
-                  </option>
-                ))}
-              </select>
+              />
+              {searchLoading && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+              {query && !loading && !searchLoading && (
+                <button
+                  onClick={handleClear}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              )}
             </div>
             <button
               onClick={handleAnalyze}
@@ -274,146 +244,6 @@ export function StockAnalyzer() {
               </div>
             </div>
 
-            {/* Valorisation */}
-            <div className="bg-slate-800 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-blue-400">
-                  💰 Valorisation
-                </h3>
-                <span
-                  className={`px-3 py-1 rounded-full text-sm font-medium border ${getValuationVerdictStyle(analysis.valuationVerdict.status)}`}
-                >
-                  {analysis.valuationVerdict.emoji} {analysis.valuationVerdict.status}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                {[
-                  {
-                    label: 'P/E Ratio',
-                    value: analysis.valuation.trailingPE?.toFixed(1) ?? 'N/A',
-                    sub: analysis.valuation.trailingPE
-                      ? analysis.valuation.trailingPE < 15
-                        ? 'Attractif'
-                        : analysis.valuation.trailingPE < 25
-                          ? 'Modéré'
-                          : 'Élevé'
-                      : '-',
-                    color: analysis.valuation.trailingPE
-                      ? analysis.valuation.trailingPE < 15
-                        ? 'text-green-400'
-                        : analysis.valuation.trailingPE < 25
-                          ? 'text-yellow-400'
-                          : 'text-red-400'
-                      : 'text-slate-500',
-                  },
-                  {
-                    label: 'P/E Forward',
-                    value: analysis.valuation.forwardPE?.toFixed(1) ?? 'N/A',
-                    sub: analysis.valuation.forwardPE && analysis.valuation.trailingPE
-                      ? analysis.valuation.forwardPE < analysis.valuation.trailingPE
-                        ? 'En amélioration'
-                        : 'En baisse'
-                      : '-',
-                    color: analysis.valuation.forwardPE && analysis.valuation.trailingPE
-                      ? analysis.valuation.forwardPE < analysis.valuation.trailingPE
-                        ? 'text-green-400'
-                        : 'text-red-400'
-                      : 'text-slate-500',
-                  },
-                  {
-                    label: 'PEG Ratio',
-                    value: analysis.valuation.pegRatio?.toFixed(2) ?? 'N/A',
-                    sub: analysis.valuation.pegRatio
-                      ? analysis.valuation.pegRatio < 1
-                        ? 'Sous-évalué'
-                        : analysis.valuation.pegRatio < 1.5
-                          ? 'Juste valeur'
-                          : 'Surévalué'
-                      : '-',
-                    color: analysis.valuation.pegRatio
-                      ? analysis.valuation.pegRatio < 1
-                        ? 'text-green-400'
-                        : analysis.valuation.pegRatio < 1.5
-                          ? 'text-yellow-400'
-                          : 'text-red-400'
-                      : 'text-slate-500',
-                  },
-                  {
-                    label: 'Price/Book',
-                    value: analysis.valuation.priceToBook?.toFixed(2) ?? 'N/A',
-                    sub: analysis.valuation.priceToBook
-                      ? analysis.valuation.priceToBook < 1
-                        ? 'Sous la valeur'
-                        : analysis.valuation.priceToBook < 3
-                          ? 'Normal'
-                          : 'Prime élevée'
-                      : '-',
-                    color: analysis.valuation.priceToBook
-                      ? analysis.valuation.priceToBook < 1
-                        ? 'text-green-400'
-                        : analysis.valuation.priceToBook < 3
-                          ? 'text-yellow-400'
-                          : 'text-red-400'
-                      : 'text-slate-500',
-                  },
-                ].map((ind) => (
-                  <div key={ind.label} className="bg-slate-700/50 rounded-lg p-4">
-                    <p className="text-slate-400 text-sm">{ind.label}</p>
-                    <p className="text-xl font-semibold">{ind.value}</p>
-                    <p className={`text-sm ${ind.color}`}>{ind.sub}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* 52 Week Range */}
-              <div className="bg-slate-700/50 rounded-lg p-4">
-                <p className="text-slate-400 text-sm mb-2">Position sur 52 semaines</p>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-slate-400 w-20">
-                    {cs(analysis.stock.currency)}{analysis.valuation.fiftyTwoWeekLow.toFixed(2)}
-                  </span>
-                  <div className="flex-1 relative h-2 bg-slate-600 rounded-full">
-                    {(() => {
-                      const range = analysis.valuation.fiftyTwoWeekHigh - analysis.valuation.fiftyTwoWeekLow;
-                      const position = range > 0
-                        ? ((analysis.valuation.currentPrice - analysis.valuation.fiftyTwoWeekLow) / range) * 100
-                        : 50;
-                      return (
-                        <>
-                          <div
-                            className="absolute h-full bg-blue-500 rounded-full"
-                            style={{ width: `${Math.min(100, Math.max(0, position))}%` }}
-                          />
-                          <div
-                            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow border-2 border-blue-500"
-                            style={{ left: `calc(${Math.min(100, Math.max(0, position))}% - 6px)` }}
-                          />
-                        </>
-                      );
-                    })()}
-                  </div>
-                  <span className="text-sm text-slate-400 w-20 text-right">
-                    {cs(analysis.stock.currency)}{analysis.valuation.fiftyTwoWeekHigh.toFixed(2)}
-                  </span>
-                </div>
-                <p className="text-center text-sm text-slate-300 mt-2">
-                  {(() => {
-                    const range = analysis.valuation.fiftyTwoWeekHigh - analysis.valuation.fiftyTwoWeekLow;
-                    const position = range > 0
-                      ? ((analysis.valuation.currentPrice - analysis.valuation.fiftyTwoWeekLow) / range) * 100
-                      : 50;
-                    return `${position.toFixed(0)}% du range annuel`;
-                  })()}
-                </p>
-              </div>
-
-              {/* Explication du verdict */}
-              <p className="text-slate-400 text-sm mt-4 text-center">
-                {analysis.valuationVerdict.explanation}
-              </p>
-            </div>
-
             {/* Détails */}
             <div className="bg-slate-800 rounded-xl p-6">
               <h3 className="text-lg font-semibold mb-4">🔍 Analyse Détaillée</h3>
@@ -500,6 +330,7 @@ export function StockAnalyzer() {
             </div>
           </div>
         )}
+      </div>
     </div>
   );
 }
