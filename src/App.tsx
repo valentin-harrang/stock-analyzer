@@ -38,7 +38,7 @@ function App() {
                   </a>
                 </span>
                 <span>
-                  💱 Taux de change :{' '}
+                  💰 Valorisation :{' '}
                   <a
                     href="https://finance.yahoo.com"
                     target="_blank"
@@ -46,6 +46,15 @@ function App() {
                     className="text-blue-400 hover:underline"
                   >
                     Yahoo Finance
+                  </a>
+                  {' + '}
+                  <a
+                    href="https://site.financialmodelingprep.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-400 hover:underline"
+                  >
+                    FMP
                   </a>
                 </span>
                 <span>
