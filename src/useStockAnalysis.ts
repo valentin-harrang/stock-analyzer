@@ -5,13 +5,15 @@ import type {
   TechnicalIndicators,
   FullAnalysis,
   Currency,
+  ValuationData,
 } from './stockAnalyzer.types';
 import {
   fetchDailyPrices,
   analyzeWithGroq,
   fetchExchangeRate,
+  fetchValuationData,
 } from './stockAnalyzer.api';
-import { calculateMACD, calculateRSI, calculateATR } from './stockAnalyzer.utils';
+import { calculateMACD, calculateRSI, calculateATR, calculateValuationVerdict } from './stockAnalyzer.utils';
 
 interface UseStockAnalysisReturn {
   loading: boolean;
@@ -50,8 +52,11 @@ export function useStockAnalysis(): UseStockAnalysisReturn {
       setAnalysis(null);
 
       try {
-        setProgress('Récupération des prix...');
-        const priceData = await fetchDailyPrices(symbol);
+        setProgress('Récupération des données...');
+        const [priceData, valuationRaw] = await Promise.all([
+          fetchDailyPrices(symbol),
+          fetchValuationData(symbol).catch(() => null),
+        ]);
         if (!priceData) throw new Error('Données indisponibles');
 
         const { dates, highs, lows, closes, volumes } = priceData;
@@ -99,9 +104,30 @@ export function useStockAnalysis(): UseStockAnalysisReturn {
           currency,
         };
 
+        // Préparer les données de valorisation
+        const valuation: ValuationData = valuationRaw ?? {
+          trailingPE: null,
+          forwardPE: null,
+          pegRatio: null,
+          priceToBook: null,
+          epsTrailingTwelveMonths: null,
+          fiftyTwoWeekHigh: Math.max(...convertedHighs),
+          fiftyTwoWeekLow: Math.min(...convertedLows),
+          currentPrice: convertedCloses[0],
+        };
+
+        // Appliquer le taux de change aux valeurs 52W si elles viennent de l'API
+        if (valuationRaw) {
+          valuation.fiftyTwoWeekHigh = valuationRaw.fiftyTwoWeekHigh * exchangeRate;
+          valuation.fiftyTwoWeekLow = valuationRaw.fiftyTwoWeekLow * exchangeRate;
+          valuation.currentPrice = convertedCloses[0];
+        }
+
+        const valuationVerdict = calculateValuationVerdict(valuation);
+
         setProgress('Analyse IA...');
         const aiAnalysis = await analyzeWithGroq(stock, indicators);
-        setAnalysis({ stock, indicators, analysis: aiAnalysis });
+        setAnalysis({ stock, indicators, valuation, valuationVerdict, analysis: aiAnalysis });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erreur');
       } finally {
