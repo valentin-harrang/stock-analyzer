@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { NuqsAdapter } from 'nuqs/adapters/react-router/v7';
 import { StockAnalyzer } from './StockAnalyzer';
 import { TrendingPage } from './pages/TrendingPage';
 import { Cac40Page } from './pages/Cac40Page';
@@ -9,6 +10,7 @@ import { Navigation } from './components/Navigation';
 function App() {
   return (
     <BrowserRouter>
+      <NuqsAdapter>
       <div className="min-h-screen bg-slate-900 text-white">
         <div className="max-w-4xl mx-auto p-6">
           <Navigation />
@@ -77,6 +79,7 @@ function App() {
           </footer>
         </div>
       </div>
+      </NuqsAdapter>
     </BrowserRouter>
   );
 }
