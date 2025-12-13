@@ -1,6 +1,7 @@
 import { useStockSearch } from './useStockSearch';
 import { useStockAnalysis } from './useStockAnalysis';
 import { getCurrencySymbol, getVerdictStyle } from './stockAnalyzer.utils';
+import { CURRENCIES } from './stockAnalyzer.types';
 
 export function StockAnalyzer() {
   const {
@@ -8,6 +9,8 @@ export function StockAnalyzer() {
     progress,
     error,
     analysis,
+    currency,
+    setCurrency,
     analyze,
     clearAnalysis,
     clearError,
@@ -54,38 +57,52 @@ export function StockAnalyzer() {
 
         {/* Search */}
         <div className="relative mb-8">
-          <div className="flex gap-3">
-            <div className="relative flex-1">
-              <input
-                ref={inputRef}
-                type="text"
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  clearError();
-                }}
-                onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleAnalyze();
-                  if (e.key === 'Escape') setShowSuggestions(false);
-                }}
-                placeholder="Rechercher (ex: Apple, LVMH, Tesla, ...)"
-                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500 text-lg pr-10"
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-3">
+              <div className="relative flex-1">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    clearError();
+                  }}
+                  onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAnalyze();
+                    if (e.key === 'Escape') setShowSuggestions(false);
+                  }}
+                  placeholder="Rechercher (ex: Apple, LVMH, Tesla, ...)"
+                  className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500 text-lg pr-10"
+                  disabled={loading}
+                />
+                {searchLoading && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                )}
+                {query && !loading && !searchLoading && (
+                  <button
+                    onClick={handleClear}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value as typeof currency)}
                 disabled={loading}
-              />
-              {searchLoading && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                </div>
-              )}
-              {query && !loading && !searchLoading && (
-                <button
-                  onClick={handleClear}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                >
-                  ✕
-                </button>
-              )}
+                className="px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500 text-lg cursor-pointer disabled:cursor-not-allowed"
+              >
+                {CURRENCIES.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.symbol} {c.value}
+                  </option>
+                ))}
+              </select>
             </div>
             <button
               onClick={handleAnalyze}
