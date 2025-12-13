@@ -105,6 +105,76 @@ export async function fetchDailyPrices(
   return { dates, opens, highs, lows, closes, volumes };
 }
 
+export interface TrendingStock {
+  symbol: string;
+  name: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  volume: number;
+  currency: string;
+}
+
+async function fetchStockQuote(symbol: string): Promise<TrendingStock | null> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
+    const response = await proxiedFetch(url);
+    const data = await response.json();
+
+    const result = data.chart?.result?.[0];
+    if (!result) return null;
+
+    const meta = result.meta;
+    const quote = result.indicators?.quote?.[0];
+
+    if (!meta || !quote) return null;
+
+    const previousClose = meta.chartPreviousClose || meta.previousClose || 0;
+    const currentPrice = meta.regularMarketPrice || 0;
+    const change = currentPrice - previousClose;
+    const changePercent = previousClose ? (change / previousClose) * 100 : 0;
+
+    return {
+      symbol: meta.symbol,
+      name: meta.shortName || meta.longName || meta.symbol,
+      price: currentPrice,
+      change,
+      changePercent,
+      volume: meta.regularMarketVolume || 0,
+      currency: meta.currency || 'USD',
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchTrendingStocks(): Promise<TrendingStock[]> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v1/finance/trending/US?count=15`;
+    const response = await proxiedFetch(url);
+    const data = await response.json();
+
+    const symbols: string[] =
+      data.finance?.result?.[0]?.quotes
+        ?.map((q: { symbol: string }) => q.symbol)
+        ?.filter(
+          (s: string) =>
+            !s.startsWith('^') && !s.includes('-USD') && !s.includes('=')
+        ) || [];
+
+    if (symbols.length === 0) return [];
+
+    const quotes = await Promise.all(
+      symbols.slice(0, 10).map((symbol) => fetchStockQuote(symbol))
+    );
+
+    return quotes.filter((q): q is TrendingStock => q !== null);
+  } catch (e) {
+    console.error('Trending stocks error:', e);
+  }
+  return [];
+}
+
 export async function analyzeWithGroq(
   stock: StockData,
   indicators: TechnicalIndicators
