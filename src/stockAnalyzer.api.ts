@@ -11,10 +11,21 @@ import type {
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 const FMP_API_KEY = import.meta.env.VITE_FMP_API_KEY;
 
-const CORS_PROXY = 'https://corsproxy.io/?';
+const CORS_PROXIES = [
+  'https://corsproxy.io/?',
+  'https://api.allorigins.win/raw?url=',
+];
 
-function proxiedFetch(url: string): Promise<Response> {
-  return fetch(CORS_PROXY + encodeURIComponent(url));
+async function proxiedFetch(url: string, proxyIndex = 0): Promise<Response> {
+  const proxy = CORS_PROXIES[proxyIndex];
+  const response = await fetch(proxy + encodeURIComponent(url));
+
+  // If unauthorized or forbidden, try next proxy
+  if ((response.status === 401 || response.status === 403) && proxyIndex < CORS_PROXIES.length - 1) {
+    return proxiedFetch(url, proxyIndex + 1);
+  }
+
+  return response;
 }
 
 export async function fetchExchangeRate(
@@ -150,8 +161,8 @@ async function fetchStockQuote(symbol: string): Promise<TrendingStock | null> {
   }
 }
 
-async function fetchYahooValuationData(symbol: string): Promise<ValuationData> {
-  // First, get 52-week range from chart endpoint
+async function fetchYahooChartData(symbol: string): Promise<ValuationData> {
+  // Get 52-week range from chart endpoint (this one works without auth)
   const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1y&includePrePost=false`;
   const chartResponse = await proxiedFetch(chartUrl);
   const chartData = await chartResponse.json();
@@ -163,8 +174,7 @@ async function fetchYahooValuationData(symbol: string): Promise<ValuationData> {
 
   const meta = chartResult.meta;
 
-  // Default values from chart data
-  const valuationData: ValuationData = {
+  return {
     trailingPE: null,
     forwardPE: null,
     pegRatio: null,
@@ -174,44 +184,12 @@ async function fetchYahooValuationData(symbol: string): Promise<ValuationData> {
     fiftyTwoWeekLow: meta.fiftyTwoWeekLow ?? 0,
     currentPrice: meta.regularMarketPrice ?? 0,
   };
-
-  // Try to get fundamental ratios from quoteSummary endpoint
-  try {
-    const summaryUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=summaryDetail,defaultKeyStatistics`;
-    const summaryResponse = await proxiedFetch(summaryUrl);
-    const summaryData = await summaryResponse.json();
-
-    const summaryDetail = summaryData.quoteSummary?.result?.[0]?.summaryDetail;
-    const keyStats = summaryData.quoteSummary?.result?.[0]?.defaultKeyStatistics;
-
-    if (summaryDetail) {
-      valuationData.trailingPE = summaryDetail.trailingPE?.raw ?? null;
-      valuationData.forwardPE = summaryDetail.forwardPE?.raw ?? null;
-    }
-
-    if (keyStats) {
-      valuationData.pegRatio = keyStats.pegRatio?.raw ?? null;
-      valuationData.priceToBook = keyStats.priceToBook?.raw ?? null;
-      valuationData.epsTrailingTwelveMonths = keyStats.trailingEps?.raw ?? null;
-      // Fallback for forwardPE if not in summaryDetail
-      if (valuationData.forwardPE === null) {
-        valuationData.forwardPE = keyStats.forwardPE?.raw ?? null;
-      }
-    }
-  } catch (e) {
-    console.error('Yahoo quoteSummary error:', e);
-    // Continue with chart data only
-  }
-
-  return valuationData;
 }
 
-interface FmpRatioResponse {
-  symbol: string;
-  peRatioTTM: number | null;
-  pegRatioTTM: number | null;
+interface FmpRatiosTTM {
+  priceToEarningsRatioTTM: number | null;
+  priceToEarningsGrowthRatioTTM: number | null;
   priceToBookRatioTTM: number | null;
-  priceEarningsToGrowthRatioTTM: number | null;
 }
 
 async function fetchFmpValuationData(symbol: string): Promise<Partial<ValuationData>> {
@@ -220,34 +198,26 @@ async function fetchFmpValuationData(symbol: string): Promise<Partial<ValuationD
   }
 
   try {
-    // Use the stable endpoint (legacy /api/v3/ is deprecated)
     const url = `https://financialmodelingprep.com/stable/ratios-ttm?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_API_KEY}`;
     const response = await fetch(url);
 
     if (!response.ok) {
-      console.error('FMP API error:', response.status, response.statusText);
       return {};
     }
 
     const data = await response.json();
 
-    // Handle error response from FMP
-    if (data && 'Error Message' in data) {
-      console.error('FMP API error:', data['Error Message']);
+    if (data?.['Error Message'] || !Array.isArray(data) || data.length === 0) {
       return {};
     }
 
-    // Response can be an array or single object
-    const ratios: FmpRatioResponse | undefined = Array.isArray(data) ? data[0] : data;
-
-    if (!ratios) {
-      return {};
-    }
+    const ratios = data[0] as FmpRatiosTTM;
 
     return {
-      trailingPE: ratios.peRatioTTM ?? null,
-      pegRatio: ratios.pegRatioTTM ?? ratios.priceEarningsToGrowthRatioTTM ?? null,
+      trailingPE: ratios.priceToEarningsRatioTTM ?? null,
+      pegRatio: ratios.priceToEarningsGrowthRatioTTM ?? null,
       priceToBook: ratios.priceToBookRatioTTM ?? null,
+      // Forward P/E not available in FMP free tier
     };
   } catch (e) {
     console.error('FMP API error:', e);
@@ -256,24 +226,19 @@ async function fetchFmpValuationData(symbol: string): Promise<Partial<ValuationD
 }
 
 export async function fetchValuationData(symbol: string): Promise<ValuationData> {
-  // Fetch Yahoo data first (for 52W range and basic data)
-  const yahooData = await fetchYahooValuationData(symbol);
+  // Fetch Yahoo chart data (for 52W range - this endpoint works without auth)
+  const yahooData = await fetchYahooChartData(symbol);
 
-  // Check if we're missing key ratios
-  const missingRatios =
-    yahooData.trailingPE === null &&
-    yahooData.pegRatio === null &&
-    yahooData.priceToBook === null;
-
-  // If missing ratios and FMP key is available, try FMP as fallback
-  if (missingRatios && FMP_API_KEY) {
+  // Try FMP for fundamental ratios (P/E, PEG, P/B)
+  if (FMP_API_KEY) {
     const fmpData = await fetchFmpValuationData(symbol);
 
     return {
       ...yahooData,
-      trailingPE: fmpData.trailingPE ?? yahooData.trailingPE,
-      pegRatio: fmpData.pegRatio ?? yahooData.pegRatio,
-      priceToBook: fmpData.priceToBook ?? yahooData.priceToBook,
+      trailingPE: fmpData.trailingPE ?? null,
+      forwardPE: fmpData.forwardPE ?? null,
+      pegRatio: fmpData.pegRatio ?? null,
+      priceToBook: fmpData.priceToBook ?? null,
     };
   }
 
