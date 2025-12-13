@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useStockSearch } from './useStockSearch';
 import { useStockAnalysis } from './useStockAnalysis';
-import { getCurrencySymbol, getVerdictStyle } from './stockAnalyzer.utils';
+import { getCurrencySymbol, getVerdictStyle, getValuationVerdictStyle } from './stockAnalyzer.utils';
 import { CURRENCIES } from './stockAnalyzer.types';
 
 export function StockAnalyzer() {
@@ -272,6 +272,146 @@ export function StockAnalyzer() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Valorisation */}
+            <div className="bg-slate-800 rounded-xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-blue-400">
+                  💰 Valorisation
+                </h3>
+                <span
+                  className={`px-3 py-1 rounded-full text-sm font-medium border ${getValuationVerdictStyle(analysis.valuationVerdict.status)}`}
+                >
+                  {analysis.valuationVerdict.emoji} {analysis.valuationVerdict.status}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                {[
+                  {
+                    label: 'P/E Ratio',
+                    value: analysis.valuation.trailingPE?.toFixed(1) ?? 'N/A',
+                    sub: analysis.valuation.trailingPE
+                      ? analysis.valuation.trailingPE < 15
+                        ? 'Attractif'
+                        : analysis.valuation.trailingPE < 25
+                          ? 'Modéré'
+                          : 'Élevé'
+                      : '-',
+                    color: analysis.valuation.trailingPE
+                      ? analysis.valuation.trailingPE < 15
+                        ? 'text-green-400'
+                        : analysis.valuation.trailingPE < 25
+                          ? 'text-yellow-400'
+                          : 'text-red-400'
+                      : 'text-slate-500',
+                  },
+                  {
+                    label: 'P/E Forward',
+                    value: analysis.valuation.forwardPE?.toFixed(1) ?? 'N/A',
+                    sub: analysis.valuation.forwardPE && analysis.valuation.trailingPE
+                      ? analysis.valuation.forwardPE < analysis.valuation.trailingPE
+                        ? 'En amélioration'
+                        : 'En baisse'
+                      : '-',
+                    color: analysis.valuation.forwardPE && analysis.valuation.trailingPE
+                      ? analysis.valuation.forwardPE < analysis.valuation.trailingPE
+                        ? 'text-green-400'
+                        : 'text-red-400'
+                      : 'text-slate-500',
+                  },
+                  {
+                    label: 'PEG Ratio',
+                    value: analysis.valuation.pegRatio?.toFixed(2) ?? 'N/A',
+                    sub: analysis.valuation.pegRatio
+                      ? analysis.valuation.pegRatio < 1
+                        ? 'Sous-évalué'
+                        : analysis.valuation.pegRatio < 1.5
+                          ? 'Juste valeur'
+                          : 'Surévalué'
+                      : '-',
+                    color: analysis.valuation.pegRatio
+                      ? analysis.valuation.pegRatio < 1
+                        ? 'text-green-400'
+                        : analysis.valuation.pegRatio < 1.5
+                          ? 'text-yellow-400'
+                          : 'text-red-400'
+                      : 'text-slate-500',
+                  },
+                  {
+                    label: 'Price/Book',
+                    value: analysis.valuation.priceToBook?.toFixed(2) ?? 'N/A',
+                    sub: analysis.valuation.priceToBook
+                      ? analysis.valuation.priceToBook < 1
+                        ? 'Sous la valeur'
+                        : analysis.valuation.priceToBook < 3
+                          ? 'Normal'
+                          : 'Prime élevée'
+                      : '-',
+                    color: analysis.valuation.priceToBook
+                      ? analysis.valuation.priceToBook < 1
+                        ? 'text-green-400'
+                        : analysis.valuation.priceToBook < 3
+                          ? 'text-yellow-400'
+                          : 'text-red-400'
+                      : 'text-slate-500',
+                  },
+                ].map((ind) => (
+                  <div key={ind.label} className="bg-slate-700/50 rounded-lg p-4">
+                    <p className="text-slate-400 text-sm">{ind.label}</p>
+                    <p className="text-xl font-semibold">{ind.value}</p>
+                    <p className={`text-sm ${ind.color}`}>{ind.sub}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* 52 Week Range */}
+              <div className="bg-slate-700/50 rounded-lg p-4">
+                <p className="text-slate-400 text-sm mb-2">Position sur 52 semaines</p>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-400 w-20">
+                    {cs(analysis.stock.currency)}{analysis.valuation.fiftyTwoWeekLow.toFixed(2)}
+                  </span>
+                  <div className="flex-1 relative h-2 bg-slate-600 rounded-full">
+                    {(() => {
+                      const range = analysis.valuation.fiftyTwoWeekHigh - analysis.valuation.fiftyTwoWeekLow;
+                      const position = range > 0
+                        ? ((analysis.valuation.currentPrice - analysis.valuation.fiftyTwoWeekLow) / range) * 100
+                        : 50;
+                      return (
+                        <>
+                          <div
+                            className="absolute h-full bg-blue-500 rounded-full"
+                            style={{ width: `${Math.min(100, Math.max(0, position))}%` }}
+                          />
+                          <div
+                            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow border-2 border-blue-500"
+                            style={{ left: `calc(${Math.min(100, Math.max(0, position))}% - 6px)` }}
+                          />
+                        </>
+                      );
+                    })()}
+                  </div>
+                  <span className="text-sm text-slate-400 w-20 text-right">
+                    {cs(analysis.stock.currency)}{analysis.valuation.fiftyTwoWeekHigh.toFixed(2)}
+                  </span>
+                </div>
+                <p className="text-center text-sm text-slate-300 mt-2">
+                  {(() => {
+                    const range = analysis.valuation.fiftyTwoWeekHigh - analysis.valuation.fiftyTwoWeekLow;
+                    const position = range > 0
+                      ? ((analysis.valuation.currentPrice - analysis.valuation.fiftyTwoWeekLow) / range) * 100
+                      : 50;
+                    return `${position.toFixed(0)}% du range annuel`;
+                  })()}
+                </p>
+              </div>
+
+              {/* Explication du verdict */}
+              <p className="text-slate-400 text-sm mt-4 text-center">
+                {analysis.valuationVerdict.explanation}
+              </p>
             </div>
 
             {/* Détails */}
