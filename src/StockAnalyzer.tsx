@@ -2,6 +2,7 @@ import { useStockSearch } from './useStockSearch';
 import { useStockAnalysis } from './useStockAnalysis';
 import { getCurrencySymbol, getVerdictStyle } from './stockAnalyzer.utils';
 import { CURRENCIES } from './stockAnalyzer.types';
+import { GlossarySheet } from './components/GlossarySheet';
 
 export function StockAnalyzer() {
   const {
@@ -49,6 +50,9 @@ export function StockAnalyzer() {
       <div className="max-w-4xl mx-auto p-6">
         {/* Header */}
         <div className="text-center mb-8">
+          <div className="flex justify-end mb-4">
+            <GlossarySheet />
+          </div>
           <h1 className="text-3xl font-bold mb-2">📊 Analyseur Boursier</h1>
           <p className="text-slate-400">
             Analyse technique pour investissement long terme
@@ -347,6 +351,52 @@ export function StockAnalyzer() {
             </div>
           </div>
         )}
+
+        {/* Footer - Sources */}
+        <footer className="mt-12 pt-6 border-t border-slate-800">
+          <div className="text-center text-slate-500 text-xs space-y-2">
+            <p className="font-medium text-slate-400">Sources des données</p>
+            <div className="flex flex-wrap justify-center gap-x-4 gap-y-1">
+              <span>
+                📊 Prix & historiques :{' '}
+                <a
+                  href="https://finance.yahoo.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:underline"
+                >
+                  Yahoo Finance
+                </a>
+              </span>
+              <span>
+                💱 Taux de change :{' '}
+                <a
+                  href="https://finance.yahoo.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:underline"
+                >
+                  Yahoo Finance
+                </a>
+              </span>
+              <span>
+                🤖 Analyse IA :{' '}
+                <a
+                  href="https://groq.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:underline"
+                >
+                  Groq (Llama 3.3)
+                </a>
+              </span>
+            </div>
+            <p className="text-slate-600 mt-3">
+              Les indicateurs techniques (RSI, MACD, MM200, ATR) sont calculés
+              localement à partir des données historiques.
+            </p>
+          </div>
+        </footer>
       </div>
     </div>
   );
