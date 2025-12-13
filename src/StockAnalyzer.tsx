@@ -69,7 +69,7 @@ export function StockAnalyzer() {
                   if (e.key === 'Enter') handleAnalyze();
                   if (e.key === 'Escape') setShowSuggestions(false);
                 }}
-                placeholder="Rechercher (ex: Apple, LVMH, Tesla, THEON...)"
+                placeholder="Rechercher (ex: Apple, LVMH, Tesla, ...)"
                 className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500 text-lg pr-10"
                 disabled={loading}
               />
@@ -318,7 +318,7 @@ export function StockAnalyzer() {
             <p className="text-lg">Recherchez une action pour lancer l'analyse</p>
             <p className="text-sm mt-2">Tapez le nom ou le ticker</p>
             <div className="flex flex-wrap justify-center gap-2 mt-4">
-              {['Apple', 'LVMH', 'Tesla', 'THEON', 'Airbus'].map((ex) => (
+              {['Apple', 'LVMH', 'Tesla', 'Airbus'].map((ex) => (
                 <button
                   key={ex}
                   onClick={() => setQuery(ex)}
