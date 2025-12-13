@@ -1,6 +1,9 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { StockAnalyzer } from './StockAnalyzer';
 import { TrendingPage } from './pages/TrendingPage';
+import { Cac40Page } from './pages/Cac40Page';
+import { DividendsPage } from './pages/DividendsPage';
+import { PeaPage } from './pages/PeaPage';
 import { Navigation } from './components/Navigation';
 
 function App() {
@@ -13,6 +16,9 @@ function App() {
           <Routes>
             <Route path="/" element={<StockAnalyzer />} />
             <Route path="/trending" element={<TrendingPage />} />
+            <Route path="/cac40" element={<Cac40Page />} />
+            <Route path="/dividends" element={<DividendsPage />} />
+            <Route path="/pea" element={<PeaPage />} />
           </Routes>
 
           {/* Footer - Sources */}
