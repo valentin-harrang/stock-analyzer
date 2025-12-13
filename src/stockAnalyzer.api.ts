@@ -4,6 +4,7 @@ import type {
   TechnicalIndicators,
   Analysis,
   PriceData,
+  Currency,
 } from './stockAnalyzer.types';
 
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
@@ -12,6 +13,26 @@ const CORS_PROXY = 'https://corsproxy.io/?';
 
 function proxiedFetch(url: string): Promise<Response> {
   return fetch(CORS_PROXY + encodeURIComponent(url));
+}
+
+export async function fetchExchangeRate(
+  from: string,
+  to: Currency
+): Promise<number> {
+  if (from === to) return 1;
+
+  try {
+    const symbol = `${from}${to}=X`;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`;
+    const response = await proxiedFetch(url);
+    const data = await response.json();
+    const rate = data.chart?.result?.[0]?.meta?.regularMarketPrice;
+    if (rate) return rate;
+  } catch (e) {
+    console.error('Exchange rate error:', e);
+  }
+
+  return 1;
 }
 
 export async function searchTickers(query: string): Promise<SearchResult[]> {
