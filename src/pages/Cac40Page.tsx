@@ -20,7 +20,7 @@ export function Cac40Page() {
   useEffect(() => {
     async function fetchPrices() {
       const symbols = CAC40_STOCKS.map((s) => s.symbol);
-      const pricesMap = await fetchMultipleStockPrices(symbols, (loaded, total) => {
+      const pricesMap = await fetchMultipleStockPrices(symbols, (loaded) => {
         // Update loading progress
         setStocks((prev) =>
           prev.map((stock, idx) => ({
