@@ -9,6 +9,7 @@ import type {
 } from './stockAnalyzer.types';
 
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+const FMP_API_KEY = import.meta.env.VITE_FMP_API_KEY;
 
 const CORS_PROXY = 'https://corsproxy.io/?';
 
@@ -149,7 +150,7 @@ async function fetchStockQuote(symbol: string): Promise<TrendingStock | null> {
   }
 }
 
-export async function fetchValuationData(symbol: string): Promise<ValuationData> {
+async function fetchYahooValuationData(symbol: string): Promise<ValuationData> {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1y&includePrePost=false`;
 
   const response = await proxiedFetch(url);
@@ -172,6 +173,65 @@ export async function fetchValuationData(symbol: string): Promise<ValuationData>
     fiftyTwoWeekLow: meta.fiftyTwoWeekLow ?? 0,
     currentPrice: meta.regularMarketPrice ?? 0,
   };
+}
+
+interface FmpRatioResponse {
+  symbol: string;
+  peRatioTTM: number | null;
+  pegRatioTTM: number | null;
+  priceToBookRatioTTM: number | null;
+  priceEarningsToGrowthRatioTTM: number | null;
+}
+
+async function fetchFmpValuationData(symbol: string): Promise<Partial<ValuationData>> {
+  if (!FMP_API_KEY) {
+    return {};
+  }
+
+  try {
+    const url = `https://financialmodelingprep.com/api/v3/ratios-ttm/${encodeURIComponent(symbol)}?apikey=${FMP_API_KEY}`;
+    const response = await fetch(url);
+    const data: FmpRatioResponse[] = await response.json();
+
+    if (!data || data.length === 0) {
+      return {};
+    }
+
+    const ratios = data[0];
+    return {
+      trailingPE: ratios.peRatioTTM ?? null,
+      pegRatio: ratios.pegRatioTTM ?? ratios.priceEarningsToGrowthRatioTTM ?? null,
+      priceToBook: ratios.priceToBookRatioTTM ?? null,
+    };
+  } catch (e) {
+    console.error('FMP API error:', e);
+    return {};
+  }
+}
+
+export async function fetchValuationData(symbol: string): Promise<ValuationData> {
+  // Fetch Yahoo data first (for 52W range and basic data)
+  const yahooData = await fetchYahooValuationData(symbol);
+
+  // Check if we're missing key ratios
+  const missingRatios =
+    yahooData.trailingPE === null &&
+    yahooData.pegRatio === null &&
+    yahooData.priceToBook === null;
+
+  // If missing ratios and FMP key is available, try FMP as fallback
+  if (missingRatios && FMP_API_KEY) {
+    const fmpData = await fetchFmpValuationData(symbol);
+
+    return {
+      ...yahooData,
+      trailingPE: fmpData.trailingPE ?? yahooData.trailingPE,
+      pegRatio: fmpData.pegRatio ?? yahooData.pegRatio,
+      priceToBook: fmpData.priceToBook ?? yahooData.priceToBook,
+    };
+  }
+
+  return yahooData;
 }
 
 export async function fetchTrendingStocks(): Promise<TrendingStock[]> {
