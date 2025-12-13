@@ -4,8 +4,13 @@ import type {
   StockData,
   TechnicalIndicators,
   FullAnalysis,
+  Currency,
 } from './stockAnalyzer.types';
-import { fetchDailyPrices, analyzeWithGroq } from './stockAnalyzer.api';
+import {
+  fetchDailyPrices,
+  analyzeWithGroq,
+  fetchExchangeRate,
+} from './stockAnalyzer.api';
 import { calculateMACD, calculateRSI, calculateATR } from './stockAnalyzer.utils';
 
 interface UseStockAnalysisReturn {
@@ -13,6 +18,8 @@ interface UseStockAnalysisReturn {
   progress: string;
   error: string | null;
   analysis: FullAnalysis | null;
+  currency: Currency;
+  setCurrency: (currency: Currency) => void;
   analyze: (query: string, selectedStock: SearchResult | null) => Promise<void>;
   clearAnalysis: () => void;
   clearError: () => void;
@@ -23,6 +30,7 @@ export function useStockAnalysis(): UseStockAnalysisReturn {
   const [progress, setProgress] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<FullAnalysis | null>(null);
+  const [currency, setCurrency] = useState<Currency>('EUR');
 
   const clearAnalysis = useCallback(() => {
     setAnalysis(null);
@@ -47,16 +55,25 @@ export function useStockAnalysis(): UseStockAnalysisReturn {
         if (!priceData) throw new Error('Données indisponibles');
 
         const { dates, highs, lows, closes, volumes } = priceData;
+        const stockCurrency = selectedStock?.currency || 'USD';
+
+        setProgress('Conversion des devises...');
+        const exchangeRate = await fetchExchangeRate(stockCurrency, currency);
+
+        const convertedCloses = closes.map((c) => c * exchangeRate);
+        const convertedHighs = highs.map((h) => h * exchangeRate);
+        const convertedLows = lows.map((l) => l * exchangeRate);
+
         setProgress('Calcul des indicateurs...');
 
-        const closesRev = [...closes].reverse();
-        const highsRev = [...highs].reverse();
-        const lowsRev = [...lows].reverse();
+        const closesRev = [...convertedCloses].reverse();
+        const highsRev = [...convertedHighs].reverse();
+        const lowsRev = [...convertedLows].reverse();
 
         const macdResult = calculateMACD(closesRev);
         const mm200 =
-          closes.slice(0, 200).reduce((a, b) => a + b, 0) /
-          Math.min(200, closes.length);
+          convertedCloses.slice(0, 200).reduce((a, b) => a + b, 0) /
+          Math.min(200, convertedCloses.length);
 
         const indicators: TechnicalIndicators = {
           mm200,
@@ -65,19 +82,21 @@ export function useStockAnalysis(): UseStockAnalysisReturn {
           macdSignal: macdResult.macdSignal,
           macdHist: macdResult.macdHist,
           atr: calculateATR(highsRev, lowsRev, closesRev, 14),
-          priceAboveMM200: closes[0] > mm200,
+          priceAboveMM200: convertedCloses[0] > mm200,
         };
 
         const stock: StockData = {
           ticker: symbol,
           name: selectedStock?.name || symbol,
-          price: closes[0],
-          previousClose: closes[1],
-          change: closes[0] - closes[1],
-          changePercent: ((closes[0] - closes[1]) / closes[1]) * 100,
+          price: convertedCloses[0],
+          previousClose: convertedCloses[1],
+          change: convertedCloses[0] - convertedCloses[1],
+          changePercent:
+            ((convertedCloses[0] - convertedCloses[1]) / convertedCloses[1]) *
+            100,
           volume: volumes[0],
           date: dates[0],
-          currency: selectedStock?.currency || 'USD',
+          currency,
         };
 
         setProgress('Analyse IA...');
@@ -90,7 +109,7 @@ export function useStockAnalysis(): UseStockAnalysisReturn {
         setProgress('');
       }
     },
-    []
+    [currency]
   );
 
   return {
@@ -98,6 +117,8 @@ export function useStockAnalysis(): UseStockAnalysisReturn {
     progress,
     error,
     analysis,
+    currency,
+    setCurrency,
     analyze,
     clearAnalysis,
     clearError,
