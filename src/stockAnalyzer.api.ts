@@ -176,10 +176,8 @@ async function fetchYahooChartData(symbol: string): Promise<ValuationData> {
 
   return {
     trailingPE: null,
-    forwardPE: null,
     pegRatio: null,
     priceToBook: null,
-    epsTrailingTwelveMonths: null,
     fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh ?? 0,
     fiftyTwoWeekLow: meta.fiftyTwoWeekLow ?? 0,
     currentPrice: meta.regularMarketPrice ?? 0,
@@ -217,7 +215,6 @@ async function fetchFmpValuationData(symbol: string): Promise<Partial<ValuationD
       trailingPE: ratios.priceToEarningsRatioTTM ?? null,
       pegRatio: ratios.priceToEarningsGrowthRatioTTM ?? null,
       priceToBook: ratios.priceToBookRatioTTM ?? null,
-      // Forward P/E not available in FMP free tier
     };
   } catch (e) {
     console.error('FMP API error:', e);
@@ -236,7 +233,6 @@ export async function fetchValuationData(symbol: string): Promise<ValuationData>
     return {
       ...yahooData,
       trailingPE: fmpData.trailingPE ?? null,
-      forwardPE: fmpData.forwardPE ?? null,
       pegRatio: fmpData.pegRatio ?? null,
       priceToBook: fmpData.priceToBook ?? null,
     };
