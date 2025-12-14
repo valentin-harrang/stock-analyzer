@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useQueryState } from 'nuqs';
 import { useStockSearch } from './useStockSearch';
 import { useStockAnalysis } from './useStockAnalysis';
-import { getCurrencySymbol, getVerdictStyle, getValuationVerdictStyle } from './stockAnalyzer.utils';
+import { getCurrencySymbol, getVerdictStyle, getValuationVerdictStyle, getMM200SlopeLabel } from './stockAnalyzer.utils';
 
 export function StockAnalyzer() {
   const [symbolParam, setSymbolParam] = useQueryState('symbol');
@@ -208,16 +208,6 @@ export function StockAnalyzer() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
                 {
-                  label: 'MM200',
-                  value: `${cs(analysis.stock.currency)}${analysis.indicators.mm200.toFixed(2)}`,
-                  sub: analysis.indicators.priceAboveMM200
-                    ? '↑ Au-dessus'
-                    : '↓ En dessous',
-                  color: analysis.indicators.priceAboveMM200
-                    ? 'text-green-400'
-                    : 'text-red-400',
-                },
-                {
                   label: 'RSI (14)',
                   value: analysis.indicators.rsi.toFixed(1),
                   sub:
@@ -263,6 +253,72 @@ export function StockAnalyzer() {
                 </div>
               ))}
             </div>
+
+            {/* MM200 Analysis */}
+            <div className="mt-4 bg-slate-700/50 rounded-lg p-4">
+              <p className="text-slate-400 text-sm mb-3">Moyenne Mobile 200 jours</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* MM200 Value + Position */}
+                <div>
+                  <p className="text-xl font-semibold">
+                    {cs(analysis.stock.currency)}{analysis.indicators.mm200.toFixed(2)}
+                  </p>
+                  <p className={`text-sm ${analysis.indicators.priceAboveMM200 ? 'text-green-400' : 'text-red-400'}`}>
+                    {analysis.indicators.priceAboveMM200 ? '↑ Cours au-dessus' : '↓ Cours en dessous'}
+                    {' '}({analysis.indicators.mm200Analysis.distancePercent >= 0 ? '+' : ''}{analysis.indicators.mm200Analysis.distancePercent.toFixed(1)}%)
+                  </p>
+                </div>
+
+                {/* MM200 Slope */}
+                <div>
+                  {(() => {
+                    const slopeInfo = getMM200SlopeLabel(analysis.indicators.mm200Analysis.slope);
+                    return (
+                      <>
+                        <p className="text-xl font-semibold">
+                          {slopeInfo.emoji} {slopeInfo.label}
+                        </p>
+                        <p className={`text-sm ${slopeInfo.color}`}>
+                          Pente: {analysis.indicators.mm200Analysis.slopePercent >= 0 ? '+' : ''}{analysis.indicators.mm200Analysis.slopePercent.toFixed(2)}% / 20j
+                        </p>
+                      </>
+                    );
+                  })()}
+                </div>
+
+                {/* Consolidation */}
+                <div>
+                  {analysis.indicators.consolidation.isConsolidating ? (
+                    <>
+                      <p className="text-xl font-semibold text-yellow-400">
+                        📊 Consolidation
+                      </p>
+                      <p className="text-sm text-yellow-400">
+                        {analysis.indicators.consolidation.days} jours (range {analysis.indicators.consolidation.rangePercent.toFixed(1)}%)
+                      </p>
+                    </>
+                  ) : analysis.indicators.consolidation.days > 0 ? (
+                    <>
+                      <p className="text-xl font-semibold text-slate-300">
+                        📊 Range court
+                      </p>
+                      <p className="text-sm text-slate-400">
+                        {analysis.indicators.consolidation.days} jours (range {analysis.indicators.consolidation.rangePercent.toFixed(1)}%)
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xl font-semibold text-blue-400">
+                        📈 En tendance
+                      </p>
+                      <p className="text-sm text-slate-400">
+                        Pas de consolidation détectée
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Valorisation */}
@@ -278,7 +334,7 @@ export function StockAnalyzer() {
               </span>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div className="grid grid-cols-3 gap-4 mb-4">
               {[
                 {
                   label: 'P/E Ratio',
@@ -296,20 +352,6 @@ export function StockAnalyzer() {
                       : analysis.valuation.trailingPE < 25
                         ? 'text-yellow-400'
                         : 'text-red-400'
-                    : 'text-slate-500',
-                },
-                {
-                  label: 'P/E Forward',
-                  value: analysis.valuation.forwardPE?.toFixed(1) ?? 'N/A',
-                  sub: analysis.valuation.forwardPE && analysis.valuation.trailingPE
-                    ? analysis.valuation.forwardPE < analysis.valuation.trailingPE
-                      ? 'En amélioration'
-                      : 'En baisse'
-                    : '-',
-                  color: analysis.valuation.forwardPE && analysis.valuation.trailingPE
-                    ? analysis.valuation.forwardPE < analysis.valuation.trailingPE
-                      ? 'text-green-400'
-                      : 'text-red-400'
                     : 'text-slate-500',
                 },
                 {
