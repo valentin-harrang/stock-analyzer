@@ -13,7 +13,7 @@ import {
   fetchExchangeRate,
   fetchValuationData,
 } from './stockAnalyzer.api';
-import { calculateMACD, calculateRSI, calculateATR, calculateValuationVerdict } from './stockAnalyzer.utils';
+import { calculateMACD, calculateRSI, calculateATR, calculateValuationVerdict, analyzeMM200, detectConsolidation } from './stockAnalyzer.utils';
 
 interface UseStockAnalysisReturn {
   loading: boolean;
@@ -76,18 +76,23 @@ export function useStockAnalysis(): UseStockAnalysisReturn {
         const lowsRev = [...convertedLows].reverse();
 
         const macdResult = calculateMACD(closesRev);
-        const mm200 =
-          convertedCloses.slice(0, 200).reduce((a, b) => a + b, 0) /
-          Math.min(200, convertedCloses.length);
+
+        // Analyse MM200 (données chronologiques: du plus ancien au plus récent)
+        const mm200Analysis = analyzeMM200(closesRev, 200);
+
+        // Détection de consolidation
+        const consolidation = detectConsolidation(highsRev, lowsRev, closesRev);
 
         const indicators: TechnicalIndicators = {
-          mm200,
+          mm200: mm200Analysis.value,
+          mm200Analysis,
+          consolidation,
           rsi: calculateRSI(closesRev, 14),
           macd: macdResult.macd,
           macdSignal: macdResult.macdSignal,
           macdHist: macdResult.macdHist,
           atr: calculateATR(highsRev, lowsRev, closesRev, 14),
-          priceAboveMM200: convertedCloses[0] > mm200,
+          priceAboveMM200: mm200Analysis.priceAbove,
         };
 
         const stock: StockData = {
@@ -107,10 +112,8 @@ export function useStockAnalysis(): UseStockAnalysisReturn {
         // Préparer les données de valorisation
         const valuation: ValuationData = valuationRaw ?? {
           trailingPE: null,
-          forwardPE: null,
           pegRatio: null,
           priceToBook: null,
-          epsTrailingTwelveMonths: null,
           fiftyTwoWeekHigh: Math.max(...convertedHighs),
           fiftyTwoWeekLow: Math.min(...convertedLows),
           currentPrice: convertedCloses[0],
