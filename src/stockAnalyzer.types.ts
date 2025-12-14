@@ -18,8 +18,26 @@ export interface StockData {
   currency: string;
 }
 
+export type MM200Slope = 'rising' | 'flat' | 'falling';
+
+export interface MM200Analysis {
+  value: number;
+  slope: MM200Slope;
+  slopePercent: number;
+  priceAbove: boolean;
+  distancePercent: number;
+}
+
+export interface ConsolidationData {
+  isConsolidating: boolean;
+  days: number;
+  rangePercent: number;
+}
+
 export interface TechnicalIndicators {
   mm200: number;
+  mm200Analysis: MM200Analysis;
+  consolidation: ConsolidationData;
   rsi: number;
   macd: number;
   macdSignal: number;
@@ -47,10 +65,8 @@ export interface Analysis {
 
 export interface ValuationData {
   trailingPE: number | null;
-  forwardPE: number | null;
   pegRatio: number | null;
   priceToBook: number | null;
-  epsTrailingTwelveMonths: number | null;
   fiftyTwoWeekHigh: number;
   fiftyTwoWeekLow: number;
   currentPrice: number;

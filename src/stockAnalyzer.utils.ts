@@ -1,4 +1,4 @@
-import type { MACDResult, ValuationData, ValuationVerdict } from './stockAnalyzer.types';
+import type { MACDResult, ValuationData, ValuationVerdict, MM200Analysis, MM200Slope, ConsolidationData } from './stockAnalyzer.types';
 
 export function calculateEMA(prices: number[], period: number): number[] {
   const ema: number[] = [];
@@ -76,6 +76,136 @@ export function calculateATR(
   return recentTRs.reduce((a, b) => a + b, 0) / recentTRs.length;
 }
 
+/**
+ * Calcule la MM200 sur une période et retourne un tableau de valeurs
+ * prices: du plus ancien au plus récent
+ */
+export function calculateSMA(prices: number[], period: number): number[] {
+  const sma: number[] = [];
+  for (let i = period - 1; i < prices.length; i++) {
+    const sum = prices.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);
+    sma.push(sum / period);
+  }
+  return sma;
+}
+
+/**
+ * Analyse complète de la MM200 : valeur, pente, position du cours
+ * prices: du plus ancien au plus récent (chronologique)
+ */
+export function analyzeMM200(prices: number[], period: number = 200): MM200Analysis {
+  if (prices.length < period) {
+    const currentPrice = prices[prices.length - 1];
+    const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+    return {
+      value: avgPrice,
+      slope: 'flat',
+      slopePercent: 0,
+      priceAbove: currentPrice > avgPrice,
+      distancePercent: ((currentPrice - avgPrice) / avgPrice) * 100,
+    };
+  }
+
+  const smaValues = calculateSMA(prices, period);
+  const currentMM200 = smaValues[smaValues.length - 1];
+  const currentPrice = prices[prices.length - 1];
+
+  // Calcul de la pente sur les 20 derniers jours de MM200
+  const slopePeriod = Math.min(20, smaValues.length);
+  const recentMM200 = smaValues.slice(-slopePeriod);
+  const mm200Start = recentMM200[0];
+  const mm200End = recentMM200[recentMM200.length - 1];
+  const slopePercent = ((mm200End - mm200Start) / mm200Start) * 100;
+
+  // Déterminer la tendance de la pente
+  let slope: MM200Slope;
+  if (slopePercent > 0.5) {
+    slope = 'rising';
+  } else if (slopePercent < -0.5) {
+    slope = 'falling';
+  } else {
+    slope = 'flat';
+  }
+
+  // Distance du cours par rapport à la MM200
+  const distancePercent = ((currentPrice - currentMM200) / currentMM200) * 100;
+
+  return {
+    value: currentMM200,
+    slope,
+    slopePercent,
+    priceAbove: currentPrice > currentMM200,
+    distancePercent,
+  };
+}
+
+/**
+ * Détecte une phase de consolidation (range serré)
+ * highs, lows, closes: du plus ancien au plus récent (chronologique)
+ *
+ * Une consolidation est détectée quand:
+ * - Le range (max-min) sur une période est < seuil% du prix moyen
+ * - On compte le nombre de jours consécutifs en consolidation
+ */
+export function detectConsolidation(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  rangeThresholdPercent: number = 10
+): ConsolidationData {
+  if (closes.length < 10) {
+    return { isConsolidating: false, days: 0, rangePercent: 0 };
+  }
+
+  // On cherche la consolidation depuis le jour actuel vers le passé
+  let consolidationDays = 0;
+
+  // Commencer avec les derniers jours et étendre
+  for (let windowSize = 5; windowSize <= Math.min(60, closes.length); windowSize++) {
+    const windowHighs = highs.slice(-windowSize);
+    const windowLows = lows.slice(-windowSize);
+
+    const maxHigh = Math.max(...windowHighs);
+    const minLow = Math.min(...windowLows);
+    const avgPrice = (maxHigh + minLow) / 2;
+    const rangePercent = ((maxHigh - minLow) / avgPrice) * 100;
+
+    if (rangePercent <= rangeThresholdPercent) {
+      consolidationDays = windowSize;
+    } else {
+      break;
+    }
+  }
+
+  // Calculer le range actuel sur la période de consolidation trouvée
+  let rangePercent = 0;
+  if (consolidationDays >= 5) {
+    const windowHighs = highs.slice(-consolidationDays);
+    const windowLows = lows.slice(-consolidationDays);
+    const maxHigh = Math.max(...windowHighs);
+    const minLow = Math.min(...windowLows);
+    const avgPrice = (maxHigh + minLow) / 2;
+    rangePercent = ((maxHigh - minLow) / avgPrice) * 100;
+  }
+
+  return {
+    isConsolidating: consolidationDays >= 10,
+    days: consolidationDays >= 5 ? consolidationDays : 0,
+    rangePercent,
+  };
+}
+
+export function getMM200SlopeLabel(slope: MM200Slope): { label: string; emoji: string; color: string } {
+  switch (slope) {
+    case 'rising':
+      return { label: 'Montante', emoji: '📈', color: 'text-green-400' };
+    case 'falling':
+      return { label: 'Descendante', emoji: '📉', color: 'text-red-400' };
+    default:
+      return { label: 'Plate', emoji: '➡️', color: 'text-yellow-400' };
+  }
+}
+
 export function getCurrencySymbol(currency: string): string {
   switch (currency) {
     case 'EUR':
@@ -101,7 +231,7 @@ export function getVerdictStyle(verdict: string): string {
 }
 
 export function calculateValuationVerdict(valuation: ValuationData): ValuationVerdict {
-  const { trailingPE, forwardPE, pegRatio, priceToBook } = valuation;
+  const { trailingPE, pegRatio, priceToBook } = valuation;
 
   // Si pas assez de données, retourner indéterminé
   const hasEnoughData = trailingPE !== null || pegRatio !== null || priceToBook !== null;
@@ -141,12 +271,6 @@ export function calculateValuationVerdict(valuation: ValuationData): ValuationVe
     } else if (trailingPE > 25) {
       score -= 1;
     }
-  }
-
-  // Comparaison P/E Forward vs Trailing (amélioration attendue)
-  if (forwardPE !== null && trailingPE !== null && forwardPE < trailingPE) {
-    score += 1;
-    reasons.push('P/E Forward < Trailing (amélioration prévue)');
   }
 
   // Analyse du Price to Book
