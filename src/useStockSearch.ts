@@ -2,9 +2,15 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { SearchResult } from './stockAnalyzer.types';
 import { searchTickers } from './stockAnalyzer.api';
 
+interface UseStockSearchOptions {
+  onClear?: () => void;
+  onSelect?: (stock: SearchResult) => void;
+}
+
 interface UseStockSearchReturn {
   query: string;
   setQuery: (query: string) => void;
+  setQueryWithoutSearch: (query: string) => void;
   suggestions: SearchResult[];
   showSuggestions: boolean;
   setShowSuggestions: (show: boolean) => void;
@@ -14,11 +20,13 @@ interface UseStockSearchReturn {
   suggestionsRef: React.RefObject<HTMLDivElement | null>;
   handleSelect: (stock: SearchResult) => void;
   handleClear: () => void;
+  resetForNewSearch: () => void;
 }
 
 export function useStockSearch(
-  onClear?: () => void
+  options?: UseStockSearchOptions
 ): UseStockSearchReturn {
+  const { onClear, onSelect } = options ?? {};
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<SearchResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -28,6 +36,13 @@ export function useStockSearch(
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const suggestionsRef = useRef<HTMLDivElement | null>(null);
+
+  // Permet de définir la query sans déclencher de recherche (ex: chargement depuis URL)
+  const setQueryWithoutSearch = useCallback((newQuery: string) => {
+    // On marque un selectedStock factice pour bloquer la recherche
+    setSelectedStock({ symbol: newQuery, name: '', type: '', region: '', currency: '' });
+    setQuery(newQuery);
+  }, []);
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -46,6 +61,7 @@ export function useStockSearch(
 
   useEffect(() => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
+
     if (query.length >= 2 && !selectedStock) {
       setSearchLoading(true);
       searchTimeout.current = setTimeout(async () => {
@@ -68,7 +84,9 @@ export function useStockSearch(
     setSelectedStock(stock);
     setQuery(`${stock.symbol} — ${stock.name}`);
     setShowSuggestions(false);
-  }, []);
+    setSuggestions([]);
+    onSelect?.(stock);
+  }, [onSelect]);
 
   const handleClear = useCallback(() => {
     setQuery('');
@@ -78,9 +96,16 @@ export function useStockSearch(
     onClear?.();
   }, [onClear]);
 
+  // Reset pour permettre une nouvelle recherche après une analyse
+  const resetForNewSearch = useCallback(() => {
+    setSelectedStock(null);
+    setSuggestions([]);
+  }, []);
+
   return {
     query,
     setQuery,
+    setQueryWithoutSearch,
     suggestions,
     showSuggestions,
     setShowSuggestions,
@@ -90,5 +115,6 @@ export function useStockSearch(
     suggestionsRef,
     handleSelect,
     handleClear,
+    resetForNewSearch,
   };
 }
