@@ -21,28 +21,35 @@ export function StockAnalyzer() {
   const {
     query,
     setQuery,
+    setQueryWithoutSearch,
     suggestions,
     showSuggestions,
     setShowSuggestions,
-    selectedStock,
     searchLoading,
     inputRef,
     suggestionsRef,
     handleSelect,
     handleClear: searchClear,
-  } = useStockSearch(() => {
-    clearAnalysis();
-    clearError();
+    resetForNewSearch,
+  } = useStockSearch({
+    onClear: () => {
+      clearAnalysis();
+      clearError();
+    },
+    onSelect: (stock) => {
+      // Lancer l'analyse automatiquement à la sélection
+      analyze(stock.symbol, stock);
+    },
   });
 
   // Handle symbol from URL on initial load
   useEffect(() => {
     if (symbolParam && !hasInitialized.current && !loading) {
       hasInitialized.current = true;
-      setQuery(symbolParam);
+      setQueryWithoutSearch(symbolParam);
       analyze(symbolParam, null);
     }
-  }, [symbolParam, loading, setQuery, analyze]);
+  }, [symbolParam, loading, setQueryWithoutSearch, analyze]);
 
   // Update URL when analysis completes
   useEffect(() => {
@@ -54,11 +61,6 @@ export function StockAnalyzer() {
   const handleClear = () => {
     searchClear();
     setSymbolParam(null);
-  };
-
-  const handleAnalyze = () => {
-    setShowSuggestions(false);
-    analyze(query, selectedStock);
   };
 
   const cs = (currency: string) => getCurrencySymbol(currency);
@@ -75,46 +77,38 @@ export function StockAnalyzer() {
 
       {/* Search */}
       <div className="relative mb-8">
-        <div className="flex flex-col lg:flex-row gap-3">
-          <div className="relative flex-1">
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                clearError();
-              }}
-              onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleAnalyze();
-                if (e.key === 'Escape') setShowSuggestions(false);
-              }}
-              placeholder="Rechercher (ex: Apple, LVMH, Tesla, ...)"
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500 text-lg pr-10"
-              disabled={loading}
-            />
-            {searchLoading && (
-              <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-              </div>
-            )}
-            {query && !loading && !searchLoading && (
-              <button
-                onClick={handleClear}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-          <button
-            onClick={handleAnalyze}
-            disabled={loading || !query.trim()}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed rounded-lg font-medium transition-colors"
-          >
-            {loading ? '⏳' : '🔍'} Analyser
-          </button>
+        <div className="relative">
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              clearError();
+              // Permettre une nouvelle recherche si l'utilisateur modifie le texte
+              resetForNewSearch();
+            }}
+            onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setShowSuggestions(false);
+            }}
+            placeholder="Rechercher une action (ex: Apple, LVMH, Tesla, ...)"
+            className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500 text-lg pr-10"
+            disabled={loading}
+          />
+          {searchLoading && (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+          {query && !loading && !searchLoading && (
+            <button
+              onClick={handleClear}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+            >
+              ✕
+            </button>
+          )}
         </div>
 
         {/* Autocomplete Dropdown */}
