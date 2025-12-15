@@ -197,7 +197,8 @@ interface FmpRatiosTTM {
 }
 
 async function fetchFmpValuationData(symbol: string): Promise<Partial<ValuationData>> {
-  if (!FMP_API_KEY) {
+  // Skip FMP for European stocks - requires premium subscription
+  if (!FMP_API_KEY || isEuropeanSymbol(symbol)) {
     return {};
   }
 
@@ -205,13 +206,15 @@ async function fetchFmpValuationData(symbol: string): Promise<Partial<ValuationD
     const url = `https://financialmodelingprep.com/stable/ratios-ttm?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_API_KEY}`;
     const response = await fetch(url);
 
-    if (!response.ok) {
+    // Handle premium required error
+    if (!response.ok || response.status === 402) {
       return {};
     }
 
     const data = await response.json();
 
-    if (data?.['Error Message'] || !Array.isArray(data) || data.length === 0) {
+    // Check for premium error in response body
+    if (data?.['Error Message'] || (typeof data === 'string' && data.includes('premium')) || !Array.isArray(data) || data.length === 0) {
       return {};
     }
 
