@@ -42,12 +42,12 @@ function App() {
                 <span>
                   💰 Valorisation :{' '}
                   <a
-                    href="https://finance.yahoo.com"
+                    href="https://finnhub.io"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-400 hover:underline"
                   >
-                    Yahoo Finance
+                    Finnhub
                   </a>
                   {' + '}
                   <a
