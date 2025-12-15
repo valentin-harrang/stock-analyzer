@@ -56,6 +56,9 @@ export function FinancialsSection({ financials, currencySymbol }: FinancialsSect
           <p className="text-slate-400 text-sm">
             États financiers non disponibles pour cette action
           </p>
+          <p className="text-slate-500 text-xs mt-2">
+            Les APIs gratuites ne couvrent pas les fondamentaux des actions européennes
+          </p>
         </div>
       </div>
     );
