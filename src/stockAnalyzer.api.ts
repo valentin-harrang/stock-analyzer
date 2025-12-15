@@ -6,10 +6,16 @@ import type {
   PriceData,
   Currency,
   ValuationData,
+  DividendData,
+  FinancialStatements,
+  IncomeStatementData,
+  BalanceSheetData,
+  CashFlowData,
 } from './stockAnalyzer.types';
 
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 const FMP_API_KEY = import.meta.env.VITE_FMP_API_KEY;
+const FINNHUB_API_KEY = import.meta.env.VITE_FINNHUB_API_KEY;
 
 const CORS_PROXIES = [
   'https://corsproxy.io/?',
@@ -222,19 +228,102 @@ async function fetchFmpValuationData(symbol: string): Promise<Partial<ValuationD
   }
 }
 
+interface FinnhubMetric {
+  peBasicExclExtraTTM?: number;
+  peExclExtraTTM?: number;
+  pbQuarterly?: number;
+  pbAnnual?: number;
+  pegRatio?: number;
+  dividendYieldIndicatedAnnual?: number;
+  roeTTM?: number;
+  currentRatioQuarterly?: number;
+}
+
+interface FinnhubBasicFinancials {
+  metric: FinnhubMetric;
+}
+
+async function fetchFinnhubValuationData(symbol: string): Promise<Partial<ValuationData>> {
+  if (!FINNHUB_API_KEY) {
+    return {};
+  }
+
+  try {
+    // Finnhub uses different symbol format for European stocks
+    // Yahoo: CAP.PA -> Finnhub: CAP.PA (same for Euronext)
+    const url = `https://finnhub.io/api/v1/stock/metric?symbol=${encodeURIComponent(symbol)}&metric=all&token=${FINNHUB_API_KEY}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      return {};
+    }
+
+    const data: FinnhubBasicFinancials = await response.json();
+
+    if (!data.metric) {
+      return {};
+    }
+
+    const metric = data.metric;
+
+    return {
+      trailingPE: metric.peBasicExclExtraTTM ?? metric.peExclExtraTTM ?? null,
+      pegRatio: metric.pegRatio ?? null,
+      priceToBook: metric.pbQuarterly ?? metric.pbAnnual ?? null,
+    };
+  } catch (e) {
+    console.error('Finnhub API error:', e);
+    return {};
+  }
+}
+
+// Detect if symbol is European (ends with .PA, .DE, .L, .AS, .BR, etc.)
+function isEuropeanSymbol(symbol: string): boolean {
+  const europeanSuffixes = ['.PA', '.DE', '.L', '.AS', '.BR', '.MI', '.MC', '.LS', '.VI', '.HE', '.ST', '.OL', '.CO'];
+  return europeanSuffixes.some(suffix => symbol.toUpperCase().endsWith(suffix));
+}
+
 export async function fetchValuationData(symbol: string): Promise<ValuationData> {
   // Fetch Yahoo chart data (for 52W range - this endpoint works without auth)
   const yahooData = await fetchYahooChartData(symbol);
 
-  // Try FMP for fundamental ratios (P/E, PEG, P/B)
+  // For European stocks, prefer Finnhub (FMP doesn't cover Europe well)
+  // For US stocks, prefer FMP (more comprehensive)
+  const isEuropean = isEuropeanSymbol(symbol);
+
+  if (isEuropean && FINNHUB_API_KEY) {
+    const finnhubData = await fetchFinnhubValuationData(symbol);
+    if (finnhubData.trailingPE || finnhubData.pegRatio || finnhubData.priceToBook) {
+      return {
+        ...yahooData,
+        trailingPE: finnhubData.trailingPE ?? null,
+        pegRatio: finnhubData.pegRatio ?? null,
+        priceToBook: finnhubData.priceToBook ?? null,
+      };
+    }
+  }
+
+  // Fallback to FMP for US stocks or if Finnhub returned nothing
   if (FMP_API_KEY) {
     const fmpData = await fetchFmpValuationData(symbol);
+    if (fmpData.trailingPE || fmpData.pegRatio || fmpData.priceToBook) {
+      return {
+        ...yahooData,
+        trailingPE: fmpData.trailingPE ?? null,
+        pegRatio: fmpData.pegRatio ?? null,
+        priceToBook: fmpData.priceToBook ?? null,
+      };
+    }
+  }
 
+  // If both failed, try Finnhub for US stocks too
+  if (!isEuropean && FINNHUB_API_KEY) {
+    const finnhubData = await fetchFinnhubValuationData(symbol);
     return {
       ...yahooData,
-      trailingPE: fmpData.trailingPE ?? null,
-      pegRatio: fmpData.pegRatio ?? null,
-      priceToBook: fmpData.priceToBook ?? null,
+      trailingPE: finnhubData.trailingPE ?? null,
+      pegRatio: finnhubData.pegRatio ?? null,
+      priceToBook: finnhubData.priceToBook ?? null,
     };
   }
 
@@ -266,6 +355,331 @@ export async function fetchTrendingStocks(): Promise<TrendingStock[]> {
     console.error('Trending stocks error:', e);
   }
   return [];
+}
+
+// ============================================
+// DIVIDEND DATA FETCHING
+// ============================================
+
+interface FmpDividendCalendar {
+  date: string;
+  label: string;
+  adjDividend: number;
+  symbol: string;
+  dividend: number;
+  recordDate: string;
+  paymentDate: string;
+  declarationDate: string;
+}
+
+interface FmpKeyMetrics {
+  dividendYield: number | null;
+  payoutRatio: number | null;
+}
+
+export async function fetchDividendData(symbol: string): Promise<DividendData | null> {
+  const isEuropean = isEuropeanSymbol(symbol);
+
+  // Try Finnhub first for European stocks, FMP for US stocks
+  if (isEuropean && FINNHUB_API_KEY) {
+    const finnhubData = await fetchFinnhubDividendData(symbol);
+    if (finnhubData && (finnhubData.dividendYield || finnhubData.dividendPerShare)) {
+      return finnhubData;
+    }
+  }
+
+  if (FMP_API_KEY) {
+    const fmpData = await fetchFmpDividendData(symbol);
+    if (fmpData && (fmpData.dividendYield || fmpData.dividendPerShare)) {
+      return fmpData;
+    }
+  }
+
+  // Fallback to Finnhub for US stocks
+  if (!isEuropean && FINNHUB_API_KEY) {
+    return await fetchFinnhubDividendData(symbol);
+  }
+
+  return null;
+}
+
+async function fetchFinnhubDividendData(symbol: string): Promise<DividendData | null> {
+  if (!FINNHUB_API_KEY) return null;
+
+  try {
+    const url = `https://finnhub.io/api/v1/stock/metric?symbol=${encodeURIComponent(symbol)}&metric=all&token=${FINNHUB_API_KEY}`;
+    const response = await fetch(url);
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    const metric = data.metric;
+
+    if (!metric) return null;
+
+    return {
+      dividendYield: metric.dividendYieldIndicatedAnnual ?? null,
+      dividendPerShare: metric.dividendPerShareAnnual ?? null,
+      payoutRatio: metric.payoutRatioAnnual ?? null,
+      exDividendDate: null, // Finnhub doesn't provide this in basic metrics
+      paymentDate: null,
+      dividendGrowth5Y: metric.dividendGrowthRate5Y ?? null,
+      consecutiveYears: null,
+    };
+  } catch (e) {
+    console.error('Finnhub dividend error:', e);
+    return null;
+  }
+}
+
+async function fetchFmpDividendData(symbol: string): Promise<DividendData | null> {
+  if (!FMP_API_KEY) return null;
+
+  try {
+    // Fetch dividend calendar for dates
+    const calendarUrl = `https://financialmodelingprep.com/stable/dividends-calendar?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_API_KEY}`;
+    const calendarResponse = await fetch(calendarUrl);
+
+    let exDividendDate: string | null = null;
+    let paymentDate: string | null = null;
+    let dividendPerShare: number | null = null;
+
+    if (calendarResponse.ok) {
+      const calendarData: FmpDividendCalendar[] = await calendarResponse.json();
+      if (Array.isArray(calendarData) && calendarData.length > 0) {
+        // Get the most recent dividend
+        const latest = calendarData[0];
+        exDividendDate = latest.date || null;
+        paymentDate = latest.paymentDate || null;
+        dividendPerShare = latest.adjDividend || latest.dividend || null;
+      }
+    }
+
+    // Fetch key metrics for yield and payout ratio
+    const metricsUrl = `https://financialmodelingprep.com/stable/key-metrics-ttm?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_API_KEY}`;
+    const metricsResponse = await fetch(metricsUrl);
+
+    let dividendYield: number | null = null;
+    let payoutRatio: number | null = null;
+
+    if (metricsResponse.ok) {
+      const metricsData: FmpKeyMetrics[] = await metricsResponse.json();
+      if (Array.isArray(metricsData) && metricsData.length > 0) {
+        dividendYield = metricsData[0].dividendYield ?? null;
+        payoutRatio = metricsData[0].payoutRatio ?? null;
+      }
+    }
+
+    // Fetch dividend growth
+    const growthUrl = `https://financialmodelingprep.com/stable/financial-growth?symbol=${encodeURIComponent(symbol)}&limit=1&apikey=${FMP_API_KEY}`;
+    const growthResponse = await fetch(growthUrl);
+
+    let dividendGrowth5Y: number | null = null;
+
+    if (growthResponse.ok) {
+      const growthData = await growthResponse.json();
+      if (Array.isArray(growthData) && growthData.length > 0) {
+        dividendGrowth5Y = growthData[0].fiveYDividendperShareGrowthPerShare ?? null;
+      }
+    }
+
+    return {
+      dividendYield: dividendYield ? dividendYield * 100 : null, // Convert to percentage
+      dividendPerShare,
+      payoutRatio: payoutRatio ? payoutRatio * 100 : null, // Convert to percentage
+      exDividendDate,
+      paymentDate,
+      dividendGrowth5Y: dividendGrowth5Y ? dividendGrowth5Y * 100 : null,
+      consecutiveYears: null,
+    };
+  } catch (e) {
+    console.error('FMP dividend error:', e);
+    return null;
+  }
+}
+
+// ============================================
+// FINANCIAL STATEMENTS FETCHING
+// ============================================
+
+interface FmpIncomeStatement {
+  date: string;
+  calendarYear: string;
+  revenue: number;
+  netIncome: number;
+  grossProfit: number;
+  operatingIncome: number;
+  eps: number;
+  epsdiluted: number;
+}
+
+interface FmpBalanceSheet {
+  date: string;
+  calendarYear: string;
+  totalAssets: number;
+  totalLiabilities: number;
+  totalStockholdersEquity: number;
+  totalDebt: number;
+  cashAndCashEquivalents: number;
+  totalCurrentAssets: number;
+  totalCurrentLiabilities: number;
+}
+
+interface FmpCashFlow {
+  date: string;
+  calendarYear: string;
+  operatingCashFlow: number;
+  capitalExpenditure: number;
+  freeCashFlow: number;
+  dividendsPaid: number;
+}
+
+interface FmpRatios {
+  grossProfitMargin: number | null;
+  operatingProfitMargin: number | null;
+  netProfitMargin: number | null;
+  returnOnEquity: number | null;
+  returnOnAssets: number | null;
+}
+
+export async function fetchFinancialStatements(symbol: string): Promise<FinancialStatements | null> {
+  if (!FMP_API_KEY) {
+    // Try Finnhub as fallback for basic metrics
+    return await fetchFinnhubFinancialData(symbol);
+  }
+
+  try {
+    // Fetch all financial statements in parallel
+    const [incomeRes, balanceRes, cashFlowRes, ratiosRes] = await Promise.all([
+      fetch(`https://financialmodelingprep.com/stable/income-statement?symbol=${encodeURIComponent(symbol)}&limit=5&apikey=${FMP_API_KEY}`),
+      fetch(`https://financialmodelingprep.com/stable/balance-sheet-statement?symbol=${encodeURIComponent(symbol)}&limit=5&apikey=${FMP_API_KEY}`),
+      fetch(`https://financialmodelingprep.com/stable/cash-flow-statement?symbol=${encodeURIComponent(symbol)}&limit=5&apikey=${FMP_API_KEY}`),
+      fetch(`https://financialmodelingprep.com/stable/ratios-ttm?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_API_KEY}`),
+    ]);
+
+    const [incomeData, balanceData, cashFlowData, ratiosData]: [
+      FmpIncomeStatement[],
+      FmpBalanceSheet[],
+      FmpCashFlow[],
+      FmpRatios[]
+    ] = await Promise.all([
+      incomeRes.ok ? incomeRes.json() : [],
+      balanceRes.ok ? balanceRes.json() : [],
+      cashFlowRes.ok ? cashFlowRes.json() : [],
+      ratiosRes.ok ? ratiosRes.json() : [],
+    ]);
+
+    if (!Array.isArray(incomeData) || incomeData.length === 0) {
+      return await fetchFinnhubFinancialData(symbol);
+    }
+
+    // Process income statements
+    const incomeStatements: IncomeStatementData[] = incomeData.map((item, index) => {
+      const prevItem = incomeData[index + 1];
+      return {
+        year: item.calendarYear || item.date.split('-')[0],
+        revenue: item.revenue,
+        netIncome: item.netIncome,
+        grossProfit: item.grossProfit,
+        operatingIncome: item.operatingIncome,
+        eps: item.epsdiluted || item.eps,
+        revenueGrowth: prevItem && prevItem.revenue ? ((item.revenue - prevItem.revenue) / prevItem.revenue) * 100 : null,
+        netIncomeGrowth: prevItem && prevItem.netIncome ? ((item.netIncome - prevItem.netIncome) / Math.abs(prevItem.netIncome)) * 100 : null,
+      };
+    });
+
+    // Process balance sheets
+    const balanceSheets: BalanceSheetData[] = balanceData.map((item) => ({
+      year: item.calendarYear || item.date.split('-')[0],
+      totalAssets: item.totalAssets,
+      totalLiabilities: item.totalLiabilities,
+      totalEquity: item.totalStockholdersEquity,
+      totalDebt: item.totalDebt,
+      cash: item.cashAndCashEquivalents,
+      debtToEquity: item.totalStockholdersEquity ? (item.totalDebt / item.totalStockholdersEquity) * 100 : null,
+      currentRatio: item.totalCurrentLiabilities ? item.totalCurrentAssets / item.totalCurrentLiabilities : null,
+    }));
+
+    // Process cash flows
+    const cashFlows: CashFlowData[] = cashFlowData.map((item) => ({
+      year: item.calendarYear || item.date.split('-')[0],
+      operatingCashFlow: item.operatingCashFlow,
+      capitalExpenditure: Math.abs(item.capitalExpenditure),
+      freeCashFlow: item.freeCashFlow,
+      dividendsPaid: Math.abs(item.dividendsPaid || 0),
+    }));
+
+    // Calculate key metrics
+    const latestRatios = Array.isArray(ratiosData) && ratiosData.length > 0 ? ratiosData[0] : null;
+
+    // Calculate 3Y growth rates
+    let revenueGrowth3Y: number | null = null;
+    let epsGrowth3Y: number | null = null;
+
+    if (incomeData.length >= 4) {
+      const latest = incomeData[0];
+      const threeYearsAgo = incomeData[3];
+      if (threeYearsAgo.revenue && threeYearsAgo.revenue > 0) {
+        revenueGrowth3Y = ((latest.revenue / threeYearsAgo.revenue) ** (1/3) - 1) * 100;
+      }
+      if (threeYearsAgo.eps && threeYearsAgo.eps > 0) {
+        epsGrowth3Y = ((latest.eps / threeYearsAgo.eps) ** (1/3) - 1) * 100;
+      }
+    }
+
+    return {
+      incomeStatements,
+      balanceSheets,
+      cashFlows,
+      keyMetrics: {
+        grossMargin: latestRatios?.grossProfitMargin ? latestRatios.grossProfitMargin * 100 : null,
+        operatingMargin: latestRatios?.operatingProfitMargin ? latestRatios.operatingProfitMargin * 100 : null,
+        netMargin: latestRatios?.netProfitMargin ? latestRatios.netProfitMargin * 100 : null,
+        roe: latestRatios?.returnOnEquity ? latestRatios.returnOnEquity * 100 : null,
+        roa: latestRatios?.returnOnAssets ? latestRatios.returnOnAssets * 100 : null,
+        revenueGrowth3Y,
+        epsGrowth3Y,
+      },
+    };
+  } catch (e) {
+    console.error('FMP financials error:', e);
+    return await fetchFinnhubFinancialData(symbol);
+  }
+}
+
+async function fetchFinnhubFinancialData(symbol: string): Promise<FinancialStatements | null> {
+  if (!FINNHUB_API_KEY) return null;
+
+  try {
+    const url = `https://finnhub.io/api/v1/stock/metric?symbol=${encodeURIComponent(symbol)}&metric=all&token=${FINNHUB_API_KEY}`;
+    const response = await fetch(url);
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    const metric = data.metric;
+
+    if (!metric) return null;
+
+    // Finnhub provides limited financial data through metrics endpoint
+    return {
+      incomeStatements: [],
+      balanceSheets: [],
+      cashFlows: [],
+      keyMetrics: {
+        grossMargin: metric.grossMarginTTM ?? metric.grossMarginAnnual ?? null,
+        operatingMargin: metric.operatingMarginTTM ?? metric.operatingMarginAnnual ?? null,
+        netMargin: metric.netProfitMarginTTM ?? metric.netProfitMarginAnnual ?? null,
+        roe: metric.roeTTM ?? metric.roeAnnual ?? null,
+        roa: metric.roaTTM ?? metric.roaAnnual ?? null,
+        revenueGrowth3Y: metric.revenueGrowth3Y ?? null,
+        epsGrowth3Y: metric.epsGrowth3Y ?? null,
+      },
+    };
+  } catch (e) {
+    console.error('Finnhub financials error:', e);
+    return null;
+  }
 }
 
 export async function analyzeWithGroq(
