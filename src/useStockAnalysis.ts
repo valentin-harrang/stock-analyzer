@@ -13,6 +13,8 @@ import {
   analyzeWithGroq,
   fetchExchangeRate,
   fetchValuationData,
+  fetchDividendData,
+  fetchFinancialStatements,
 } from './stockAnalyzer.api';
 import { calculateMACD, calculateRSI, calculateATR, calculateValuationVerdict, analyzeMM200, detectConsolidation } from './stockAnalyzer.utils';
 
@@ -54,9 +56,11 @@ export function useStockAnalysis(): UseStockAnalysisReturn {
 
       try {
         setProgress('Récupération des données...');
-        const [priceData, valuationRaw] = await Promise.all([
+        const [priceData, valuationRaw, dividendData, financialsData] = await Promise.all([
           fetchDailyPrices(symbol),
           fetchValuationData(symbol).catch(() => null),
+          fetchDividendData(symbol).catch(() => null),
+          fetchFinancialStatements(symbol).catch(() => null),
         ]);
         if (!priceData) throw new Error('Données indisponibles');
 
@@ -141,7 +145,16 @@ export function useStockAnalysis(): UseStockAnalysisReturn {
 
         setProgress('Analyse IA...');
         const aiAnalysis = await analyzeWithGroq(stock, indicators);
-        setAnalysis({ stock, indicators, valuation, valuationVerdict, analysis: aiAnalysis, chartData });
+        setAnalysis({
+          stock,
+          indicators,
+          valuation,
+          valuationVerdict,
+          analysis: aiAnalysis,
+          chartData,
+          dividend: dividendData,
+          financials: financialsData,
+        });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erreur');
       } finally {
