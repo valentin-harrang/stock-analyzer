@@ -4,6 +4,8 @@ import { useStockSearch } from './useStockSearch';
 import { useStockAnalysis } from './useStockAnalysis';
 import { getCurrencySymbol, getVerdictStyle, getValuationVerdictStyle, getMM200SlopeLabel, interpretTechnicalIndicators } from './stockAnalyzer.utils';
 import { StockChart } from './components/StockChart';
+import { DividendSection } from './components/DividendSection';
+import { FinancialsSection } from './components/FinancialsSection';
 
 export function StockAnalyzer() {
   const [symbolParam, setSymbolParam] = useQueryState('symbol');
@@ -497,6 +499,18 @@ export function StockAnalyzer() {
               {analysis.valuationVerdict.explanation}
             </p>
           </div>
+
+          {/* Dividendes */}
+          <DividendSection
+            dividend={analysis.dividend}
+            currencySymbol={cs(analysis.stock.currency)}
+          />
+
+          {/* États Financiers */}
+          <FinancialsSection
+            financials={analysis.financials}
+            currencySymbol={cs(analysis.stock.currency)}
+          />
 
           {/* Détails */}
           <div className="bg-slate-800 rounded-xl p-6">
