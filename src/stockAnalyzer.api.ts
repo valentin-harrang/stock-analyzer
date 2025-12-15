@@ -401,15 +401,6 @@ async function fetchFinnhubDividendData(symbol: string): Promise<DividendData | 
   }
 }
 
-function hasValidKeyMetrics(metrics: FinancialStatements['keyMetrics']): boolean {
-  return !!(
-    metrics.grossMargin ||
-    metrics.operatingMargin ||
-    metrics.netMargin ||
-    metrics.roe ||
-    metrics.roa
-  );
-}
 
 async function fetchFmpDividendData(symbol: string): Promise<DividendData | null> {
   if (!FMP_API_KEY) return null;
