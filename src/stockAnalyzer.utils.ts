@@ -1,4 +1,142 @@
-import type { MACDResult, ValuationData, ValuationVerdict, MM200Analysis, MM200Slope, ConsolidationData } from './stockAnalyzer.types';
+import type { MACDResult, ValuationData, ValuationVerdict, MM200Analysis, MM200Slope, ConsolidationData, TechnicalIndicators, StockData } from './stockAnalyzer.types';
+
+export interface TechnicalInterpretation {
+  trend: {
+    status: 'bullish' | 'bearish' | 'neutral';
+    label: string;
+    description: string;
+  };
+  momentum: {
+    status: 'strong' | 'weak' | 'neutral';
+    label: string;
+    description: string;
+  };
+  signal: {
+    action: 'buy' | 'sell' | 'hold';
+    label: string;
+    confidence: 'high' | 'medium' | 'low';
+  };
+  keyPoints: string[];
+}
+
+export function interpretTechnicalIndicators(
+  indicators: TechnicalIndicators,
+  _stock: StockData
+): TechnicalInterpretation {
+  const keyPoints: string[] = [];
+
+  // Analyse de la tendance (MM200)
+  let trendStatus: 'bullish' | 'bearish' | 'neutral' = 'neutral';
+  let trendLabel = 'Neutre';
+  let trendDescription = '';
+
+  if (indicators.priceAboveMM200 && indicators.mm200Analysis.slope === 'rising') {
+    trendStatus = 'bullish';
+    trendLabel = 'Haussière';
+    trendDescription = `Le cours est ${indicators.mm200Analysis.distancePercent.toFixed(1)}% au-dessus de la MM200 qui est montante`;
+    keyPoints.push('Tendance de fond haussière confirmée');
+  } else if (!indicators.priceAboveMM200 && indicators.mm200Analysis.slope === 'falling') {
+    trendStatus = 'bearish';
+    trendLabel = 'Baissière';
+    trendDescription = `Le cours est ${Math.abs(indicators.mm200Analysis.distancePercent).toFixed(1)}% en dessous de la MM200 qui est descendante`;
+    keyPoints.push('Tendance de fond baissière');
+  } else if (indicators.priceAboveMM200) {
+    trendStatus = 'bullish';
+    trendLabel = 'Modérément haussière';
+    trendDescription = `Le cours est au-dessus de la MM200 mais la pente est ${indicators.mm200Analysis.slope === 'flat' ? 'plate' : 'descendante'}`;
+  } else {
+    trendStatus = 'bearish';
+    trendLabel = 'Modérément baissière';
+    trendDescription = `Le cours est en dessous de la MM200`;
+  }
+
+  // Analyse du momentum (RSI + MACD)
+  let momentumStatus: 'strong' | 'weak' | 'neutral' = 'neutral';
+  let momentumLabel = 'Neutre';
+  let momentumDescription = '';
+
+  const rsiStrength = indicators.rsi > 70 ? 'surachat' : indicators.rsi < 30 ? 'survente' : indicators.rsi > 50 ? 'positif' : 'négatif';
+  const macdBullish = indicators.macd > indicators.macdSignal;
+
+  if (indicators.rsi > 50 && macdBullish) {
+    momentumStatus = 'strong';
+    momentumLabel = 'Fort';
+    momentumDescription = `RSI ${rsiStrength} (${indicators.rsi.toFixed(0)}) et MACD haussier`;
+    if (indicators.rsi < 70) {
+      keyPoints.push('Momentum positif avec marge de progression');
+    }
+  } else if (indicators.rsi < 50 && !macdBullish) {
+    momentumStatus = 'weak';
+    momentumLabel = 'Faible';
+    momentumDescription = `RSI ${rsiStrength} (${indicators.rsi.toFixed(0)}) et MACD baissier`;
+  } else {
+    momentumLabel = 'Mixte';
+    momentumDescription = `RSI ${rsiStrength} (${indicators.rsi.toFixed(0)}), MACD ${macdBullish ? 'haussier' : 'baissier'}`;
+  }
+
+  // Signaux spécifiques
+  if (indicators.rsi > 70) {
+    keyPoints.push('⚠️ RSI en zone de surachat - risque de correction');
+  } else if (indicators.rsi < 30) {
+    keyPoints.push('RSI en zone de survente - rebond possible');
+  }
+
+  if (indicators.consolidation.isConsolidating) {
+    keyPoints.push(`📊 Consolidation en cours depuis ${indicators.consolidation.days} jours (range ${indicators.consolidation.rangePercent.toFixed(1)}%)`);
+  }
+
+  // Signal d'action
+  let action: 'buy' | 'sell' | 'hold' = 'hold';
+  let actionLabel = 'Conserver';
+  let confidence: 'high' | 'medium' | 'low' = 'medium';
+
+  // Calcul du score
+  let score = 0;
+  if (indicators.priceAboveMM200) score += 2;
+  if (indicators.mm200Analysis.slope === 'rising') score += 1;
+  if (indicators.rsi > 50 && indicators.rsi < 70) score += 2;
+  if (indicators.rsi > 70) score -= 1; // Surachat
+  if (indicators.rsi < 30) score += 1; // Survente = opportunité
+  if (macdBullish) score += 1;
+  if (indicators.consolidation.isConsolidating && indicators.priceAboveMM200) score += 1; // Consolidation dans tendance haussière
+
+  if (score >= 5) {
+    action = 'buy';
+    actionLabel = 'Favorable à l\'achat';
+    confidence = 'high';
+  } else if (score >= 3) {
+    action = 'buy';
+    actionLabel = 'Opportunité d\'achat';
+    confidence = 'medium';
+  } else if (score <= 0) {
+    action = 'sell';
+    actionLabel = 'Prudence conseillée';
+    confidence = score <= -2 ? 'high' : 'medium';
+  } else {
+    action = 'hold';
+    actionLabel = 'Attendre';
+    confidence = 'low';
+  }
+
+  return {
+    trend: {
+      status: trendStatus,
+      label: trendLabel,
+      description: trendDescription,
+    },
+    momentum: {
+      status: momentumStatus,
+      label: momentumLabel,
+      description: momentumDescription,
+    },
+    signal: {
+      action,
+      label: actionLabel,
+      confidence,
+    },
+    keyPoints,
+  };
+}
 
 export function calculateEMA(prices: number[], period: number): number[] {
   const ema: number[] = [];
