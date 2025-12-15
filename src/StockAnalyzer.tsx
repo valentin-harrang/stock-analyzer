@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react';
 import { useQueryState } from 'nuqs';
 import { useStockSearch } from './useStockSearch';
 import { useStockAnalysis } from './useStockAnalysis';
-import { getCurrencySymbol, getVerdictStyle, getValuationVerdictStyle, getMM200SlopeLabel } from './stockAnalyzer.utils';
+import { getCurrencySymbol, getVerdictStyle, getValuationVerdictStyle, getMM200SlopeLabel, interpretTechnicalIndicators } from './stockAnalyzer.utils';
+import { StockChart } from './components/StockChart';
 
 export function StockAnalyzer() {
   const [symbolParam, setSymbolParam] = useQueryState('symbol');
@@ -194,6 +195,13 @@ export function StockAnalyzer() {
             </div>
           </div>
 
+          {/* Graphique */}
+          <StockChart
+            data={analysis.chartData}
+            mm200={analysis.indicators.mm200}
+            currency={analysis.stock.currency}
+          />
+
           {/* Indicateurs Techniques */}
           <div className="bg-slate-800 rounded-xl p-6">
             <h3 className="text-lg font-semibold mb-4 text-blue-400">
@@ -313,6 +321,66 @@ export function StockAnalyzer() {
                 </div>
               </div>
             </div>
+
+            {/* Interprétation automatique */}
+            {(() => {
+              const interpretation = interpretTechnicalIndicators(analysis.indicators, analysis.stock);
+              return (
+                <div className="mt-4 bg-slate-700/30 rounded-lg p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    {/* Tendance */}
+                    <div className="text-center">
+                      <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Tendance</p>
+                      <p className={`text-lg font-semibold ${
+                        interpretation.trend.status === 'bullish' ? 'text-green-400' :
+                        interpretation.trend.status === 'bearish' ? 'text-red-400' : 'text-yellow-400'
+                      }`}>
+                        {interpretation.trend.status === 'bullish' ? '📈' : interpretation.trend.status === 'bearish' ? '📉' : '➡️'} {interpretation.trend.label}
+                      </p>
+                      <p className="text-slate-500 text-xs mt-1">{interpretation.trend.description}</p>
+                    </div>
+
+                    {/* Momentum */}
+                    <div className="text-center">
+                      <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Momentum</p>
+                      <p className={`text-lg font-semibold ${
+                        interpretation.momentum.status === 'strong' ? 'text-green-400' :
+                        interpretation.momentum.status === 'weak' ? 'text-red-400' : 'text-yellow-400'
+                      }`}>
+                        {interpretation.momentum.status === 'strong' ? '💪' : interpretation.momentum.status === 'weak' ? '📉' : '⚖️'} {interpretation.momentum.label}
+                      </p>
+                      <p className="text-slate-500 text-xs mt-1">{interpretation.momentum.description}</p>
+                    </div>
+
+                    {/* Signal */}
+                    <div className="text-center">
+                      <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Signal Technique</p>
+                      <p className={`text-lg font-semibold ${
+                        interpretation.signal.action === 'buy' ? 'text-green-400' :
+                        interpretation.signal.action === 'sell' ? 'text-red-400' : 'text-yellow-400'
+                      }`}>
+                        {interpretation.signal.action === 'buy' ? '✅' : interpretation.signal.action === 'sell' ? '⛔' : '⏸️'} {interpretation.signal.label}
+                      </p>
+                      <p className="text-slate-500 text-xs mt-1">
+                        Confiance: {interpretation.signal.confidence === 'high' ? 'Élevée' : interpretation.signal.confidence === 'medium' ? 'Moyenne' : 'Faible'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Points clés */}
+                  {interpretation.keyPoints.length > 0 && (
+                    <div className="border-t border-slate-600/50 pt-3 mt-3">
+                      <p className="text-slate-400 text-xs uppercase tracking-wide mb-2">Points clés</p>
+                      <ul className="space-y-1">
+                        {interpretation.keyPoints.map((point, i) => (
+                          <li key={i} className="text-slate-300 text-sm">• {point}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Valorisation */}
@@ -328,70 +396,59 @@ export function StockAnalyzer() {
               </span>
             </div>
 
-            <div className="grid grid-cols-3 gap-4 mb-4">
-              {[
-                {
-                  label: 'P/E Ratio',
-                  value: analysis.valuation.trailingPE?.toFixed(1) ?? 'N/A',
-                  sub: analysis.valuation.trailingPE
-                    ? analysis.valuation.trailingPE < 15
-                      ? 'Attractif'
-                      : analysis.valuation.trailingPE < 25
-                        ? 'Modéré'
-                        : 'Élevé'
-                    : '-',
-                  color: analysis.valuation.trailingPE
-                    ? analysis.valuation.trailingPE < 15
-                      ? 'text-green-400'
-                      : analysis.valuation.trailingPE < 25
-                        ? 'text-yellow-400'
-                        : 'text-red-400'
-                    : 'text-slate-500',
-                },
-                {
-                  label: 'PEG Ratio',
-                  value: analysis.valuation.pegRatio?.toFixed(2) ?? 'N/A',
-                  sub: analysis.valuation.pegRatio
-                    ? analysis.valuation.pegRatio < 1
-                      ? 'Sous-évalué'
-                      : analysis.valuation.pegRatio < 1.5
-                        ? 'Juste valeur'
-                        : 'Surévalué'
-                    : '-',
-                  color: analysis.valuation.pegRatio
-                    ? analysis.valuation.pegRatio < 1
-                      ? 'text-green-400'
-                      : analysis.valuation.pegRatio < 1.5
-                        ? 'text-yellow-400'
-                        : 'text-red-400'
-                    : 'text-slate-500',
-                },
-                {
-                  label: 'Price/Book',
-                  value: analysis.valuation.priceToBook?.toFixed(2) ?? 'N/A',
-                  sub: analysis.valuation.priceToBook
-                    ? analysis.valuation.priceToBook < 1
-                      ? 'Sous la valeur'
-                      : analysis.valuation.priceToBook < 3
-                        ? 'Normal'
-                        : 'Prime élevée'
-                    : '-',
-                  color: analysis.valuation.priceToBook
-                    ? analysis.valuation.priceToBook < 1
-                      ? 'text-green-400'
-                      : analysis.valuation.priceToBook < 3
-                        ? 'text-yellow-400'
-                        : 'text-red-400'
-                    : 'text-slate-500',
-                },
-              ].map((ind) => (
-                <div key={ind.label} className="bg-slate-700/50 rounded-lg p-4">
-                  <p className="text-slate-400 text-sm">{ind.label}</p>
-                  <p className="text-xl font-semibold">{ind.value}</p>
-                  <p className={`text-sm ${ind.color}`}>{ind.sub}</p>
-                </div>
-              ))}
-            </div>
+            {/* Ratios fondamentaux - seulement si des données sont disponibles */}
+            {(analysis.valuation.trailingPE || analysis.valuation.pegRatio || analysis.valuation.priceToBook) ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                {analysis.valuation.trailingPE && (
+                  <div className="bg-slate-700/50 rounded-lg p-4">
+                    <p className="text-slate-400 text-sm">P/E Ratio</p>
+                    <p className="text-xl font-semibold">{analysis.valuation.trailingPE.toFixed(1)}</p>
+                    <p className={`text-sm ${
+                      analysis.valuation.trailingPE < 15 ? 'text-green-400' :
+                      analysis.valuation.trailingPE < 25 ? 'text-yellow-400' : 'text-red-400'
+                    }`}>
+                      {analysis.valuation.trailingPE < 15 ? 'Attractif' :
+                       analysis.valuation.trailingPE < 25 ? 'Modéré' : 'Élevé'}
+                    </p>
+                  </div>
+                )}
+                {analysis.valuation.pegRatio && (
+                  <div className="bg-slate-700/50 rounded-lg p-4">
+                    <p className="text-slate-400 text-sm">PEG Ratio</p>
+                    <p className="text-xl font-semibold">{analysis.valuation.pegRatio.toFixed(2)}</p>
+                    <p className={`text-sm ${
+                      analysis.valuation.pegRatio < 1 ? 'text-green-400' :
+                      analysis.valuation.pegRatio < 1.5 ? 'text-yellow-400' : 'text-red-400'
+                    }`}>
+                      {analysis.valuation.pegRatio < 1 ? 'Sous-évalué' :
+                       analysis.valuation.pegRatio < 1.5 ? 'Juste valeur' : 'Surévalué'}
+                    </p>
+                  </div>
+                )}
+                {analysis.valuation.priceToBook && (
+                  <div className="bg-slate-700/50 rounded-lg p-4">
+                    <p className="text-slate-400 text-sm">Price/Book</p>
+                    <p className="text-xl font-semibold">{analysis.valuation.priceToBook.toFixed(2)}</p>
+                    <p className={`text-sm ${
+                      analysis.valuation.priceToBook < 1 ? 'text-green-400' :
+                      analysis.valuation.priceToBook < 3 ? 'text-yellow-400' : 'text-red-400'
+                    }`}>
+                      {analysis.valuation.priceToBook < 1 ? 'Sous la valeur' :
+                       analysis.valuation.priceToBook < 3 ? 'Normal' : 'Prime élevée'}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="bg-slate-700/30 rounded-lg p-4 mb-4 text-center">
+                <p className="text-slate-400 text-sm">
+                  📊 Ratios fondamentaux non disponibles pour cette action
+                </p>
+                <p className="text-slate-500 text-xs mt-1">
+                  Les données P/E, PEG et P/B ne sont pas disponibles via les APIs gratuites pour les marchés européens
+                </p>
+              </div>
+            )}
 
             {/* 52 Week Range */}
             <div className="bg-slate-700/50 rounded-lg p-4">
