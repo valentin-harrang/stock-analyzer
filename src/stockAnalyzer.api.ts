@@ -361,17 +361,6 @@ export async function fetchTrendingStocks(): Promise<TrendingStock[]> {
 // DIVIDEND DATA FETCHING
 // ============================================
 
-interface FmpDividendCalendar {
-  date: string;
-  label: string;
-  adjDividend: number;
-  symbol: string;
-  dividend: number;
-  recordDate: string;
-  paymentDate: string;
-  declarationDate: string;
-}
-
 interface FmpKeyMetrics {
   dividendYield: number | null;
   payoutRatio: number | null;
@@ -435,27 +424,13 @@ async function fetchFinnhubDividendData(symbol: string): Promise<DividendData | 
 async function fetchFmpDividendData(symbol: string): Promise<DividendData | null> {
   if (!FMP_API_KEY) return null;
 
+  // Skip FMP for European stocks - they require premium subscription
+  if (isEuropeanSymbol(symbol)) {
+    return null;
+  }
+
   try {
-    // Fetch dividend calendar for dates
-    const calendarUrl = `https://financialmodelingprep.com/stable/dividends-calendar?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_API_KEY}`;
-    const calendarResponse = await fetch(calendarUrl);
-
-    let exDividendDate: string | null = null;
-    let paymentDate: string | null = null;
-    let dividendPerShare: number | null = null;
-
-    if (calendarResponse.ok) {
-      const calendarData: FmpDividendCalendar[] = await calendarResponse.json();
-      if (Array.isArray(calendarData) && calendarData.length > 0) {
-        // Get the most recent dividend
-        const latest = calendarData[0];
-        exDividendDate = latest.date || null;
-        paymentDate = latest.paymentDate || null;
-        dividendPerShare = latest.adjDividend || latest.dividend || null;
-      }
-    }
-
-    // Fetch key metrics for yield and payout ratio
+    // Fetch key metrics for yield and payout ratio (free tier for US stocks)
     const metricsUrl = `https://financialmodelingprep.com/stable/key-metrics-ttm?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_API_KEY}`;
     const metricsResponse = await fetch(metricsUrl);
 
@@ -464,32 +439,23 @@ async function fetchFmpDividendData(symbol: string): Promise<DividendData | null
 
     if (metricsResponse.ok) {
       const metricsData: FmpKeyMetrics[] = await metricsResponse.json();
-      if (Array.isArray(metricsData) && metricsData.length > 0) {
+      // Check for premium error in response
+      if (Array.isArray(metricsData) && metricsData.length > 0 && !('Error Message' in metricsData[0])) {
         dividendYield = metricsData[0].dividendYield ?? null;
         payoutRatio = metricsData[0].payoutRatio ?? null;
       }
-    }
-
-    // Fetch dividend growth
-    const growthUrl = `https://financialmodelingprep.com/stable/financial-growth?symbol=${encodeURIComponent(symbol)}&limit=1&apikey=${FMP_API_KEY}`;
-    const growthResponse = await fetch(growthUrl);
-
-    let dividendGrowth5Y: number | null = null;
-
-    if (growthResponse.ok) {
-      const growthData = await growthResponse.json();
-      if (Array.isArray(growthData) && growthData.length > 0) {
-        dividendGrowth5Y = growthData[0].fiveYDividendperShareGrowthPerShare ?? null;
-      }
+    } else if (metricsResponse.status === 402) {
+      // Premium required - return null to fallback to Finnhub
+      return null;
     }
 
     return {
-      dividendYield: dividendYield ? dividendYield * 100 : null, // Convert to percentage
-      dividendPerShare,
-      payoutRatio: payoutRatio ? payoutRatio * 100 : null, // Convert to percentage
-      exDividendDate,
-      paymentDate,
-      dividendGrowth5Y: dividendGrowth5Y ? dividendGrowth5Y * 100 : null,
+      dividendYield: dividendYield ? dividendYield * 100 : null,
+      dividendPerShare: null,
+      payoutRatio: payoutRatio ? payoutRatio * 100 : null,
+      exDividendDate: null,
+      paymentDate: null,
+      dividendGrowth5Y: null,
       consecutiveYears: null,
     };
   } catch (e) {
@@ -543,19 +509,28 @@ interface FmpRatios {
 }
 
 export async function fetchFinancialStatements(symbol: string): Promise<FinancialStatements | null> {
-  if (!FMP_API_KEY) {
-    // Try Finnhub as fallback for basic metrics
+  // For European stocks, use Finnhub directly (FMP requires premium for non-US)
+  const isEuropean = isEuropeanSymbol(symbol);
+
+  if (!FMP_API_KEY || isEuropean) {
+    // Try Finnhub for basic metrics
     return await fetchFinnhubFinancialData(symbol);
   }
 
   try {
-    // Fetch all financial statements in parallel
+    // Fetch all financial statements in parallel (only for US stocks on free tier)
     const [incomeRes, balanceRes, cashFlowRes, ratiosRes] = await Promise.all([
       fetch(`https://financialmodelingprep.com/stable/income-statement?symbol=${encodeURIComponent(symbol)}&limit=5&apikey=${FMP_API_KEY}`),
       fetch(`https://financialmodelingprep.com/stable/balance-sheet-statement?symbol=${encodeURIComponent(symbol)}&limit=5&apikey=${FMP_API_KEY}`),
       fetch(`https://financialmodelingprep.com/stable/cash-flow-statement?symbol=${encodeURIComponent(symbol)}&limit=5&apikey=${FMP_API_KEY}`),
       fetch(`https://financialmodelingprep.com/stable/ratios-ttm?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_API_KEY}`),
     ]);
+
+    // Check if any request returned 402 (premium required)
+    if ([incomeRes, balanceRes, cashFlowRes, ratiosRes].some(r => r.status === 402)) {
+      console.warn('FMP premium required for this symbol, falling back to Finnhub');
+      return await fetchFinnhubFinancialData(symbol);
+    }
 
     const [incomeData, balanceData, cashFlowData, ratiosData]: [
       FmpIncomeStatement[],
