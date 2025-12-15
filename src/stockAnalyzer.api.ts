@@ -287,18 +287,26 @@ function isEuropeanSymbol(symbol: string): boolean {
 }
 
 export async function fetchValuationData(symbol: string): Promise<ValuationData> {
-  // Fetch Yahoo chart data (for 52W range - this endpoint works without auth)
-  const yahooData = await fetchYahooChartData(symbol);
+  // Fetch Yahoo chart data (for 52W range)
+  const yahooChartData = await fetchYahooChartData(symbol);
 
-  // For European stocks, prefer Finnhub (FMP doesn't cover Europe well)
-  // For US stocks, prefer FMP (more comprehensive)
-  const isEuropean = isEuropeanSymbol(symbol);
+  // Try Yahoo Finance quoteSummary first (works for all stocks, free)
+  const yahooFundamentals = await getCachedYahooFundamentals(symbol);
+  if (yahooFundamentals.valuation.trailingPE || yahooFundamentals.valuation.pegRatio || yahooFundamentals.valuation.priceToBook) {
+    return {
+      ...yahooChartData,
+      trailingPE: yahooFundamentals.valuation.trailingPE ?? null,
+      pegRatio: yahooFundamentals.valuation.pegRatio ?? null,
+      priceToBook: yahooFundamentals.valuation.priceToBook ?? null,
+    };
+  }
 
-  if (isEuropean && FINNHUB_API_KEY) {
+  // Fallback to Finnhub
+  if (FINNHUB_API_KEY) {
     const finnhubData = await fetchFinnhubValuationData(symbol);
     if (finnhubData.trailingPE || finnhubData.pegRatio || finnhubData.priceToBook) {
       return {
-        ...yahooData,
+        ...yahooChartData,
         trailingPE: finnhubData.trailingPE ?? null,
         pegRatio: finnhubData.pegRatio ?? null,
         priceToBook: finnhubData.priceToBook ?? null,
@@ -306,12 +314,12 @@ export async function fetchValuationData(symbol: string): Promise<ValuationData>
     }
   }
 
-  // Fallback to FMP for US stocks or if Finnhub returned nothing
-  if (FMP_API_KEY) {
+  // Fallback to FMP for US stocks only
+  if (FMP_API_KEY && !isEuropeanSymbol(symbol)) {
     const fmpData = await fetchFmpValuationData(symbol);
     if (fmpData.trailingPE || fmpData.pegRatio || fmpData.priceToBook) {
       return {
-        ...yahooData,
+        ...yahooChartData,
         trailingPE: fmpData.trailingPE ?? null,
         pegRatio: fmpData.pegRatio ?? null,
         priceToBook: fmpData.priceToBook ?? null,
@@ -319,18 +327,7 @@ export async function fetchValuationData(symbol: string): Promise<ValuationData>
     }
   }
 
-  // If both failed, try Finnhub for US stocks too
-  if (!isEuropean && FINNHUB_API_KEY) {
-    const finnhubData = await fetchFinnhubValuationData(symbol);
-    return {
-      ...yahooData,
-      trailingPE: finnhubData.trailingPE ?? null,
-      pegRatio: finnhubData.pegRatio ?? null,
-      priceToBook: finnhubData.priceToBook ?? null,
-    };
-  }
-
-  return yahooData;
+  return yahooChartData;
 }
 
 export async function fetchTrendingStocks(): Promise<TrendingStock[]> {
@@ -369,27 +366,44 @@ interface FmpKeyMetrics {
   payoutRatio: number | null;
 }
 
-export async function fetchDividendData(symbol: string): Promise<DividendData | null> {
-  const isEuropean = isEuropeanSymbol(symbol);
+// Cache for Yahoo fundamentals to avoid duplicate calls
+const yahooFundamentalsCache = new Map<string, {
+  data: Awaited<ReturnType<typeof fetchYahooFundamentals>>;
+  timestamp: number;
+}>();
 
-  // Try Finnhub first for European stocks, FMP for US stocks
-  if (isEuropean && FINNHUB_API_KEY) {
+async function getCachedYahooFundamentals(symbol: string) {
+  const cached = yahooFundamentalsCache.get(symbol);
+  const now = Date.now();
+
+  // Cache for 5 minutes
+  if (cached && (now - cached.timestamp) < 5 * 60 * 1000) {
+    return cached.data;
+  }
+
+  const data = await fetchYahooFundamentals(symbol);
+  yahooFundamentalsCache.set(symbol, { data, timestamp: now });
+  return data;
+}
+
+export async function fetchDividendData(symbol: string): Promise<DividendData | null> {
+  // Try Yahoo Finance first (works for all stocks, free)
+  const yahooData = await getCachedYahooFundamentals(symbol);
+  if (yahooData.dividend && (yahooData.dividend.dividendYield || yahooData.dividend.dividendPerShare)) {
+    return yahooData.dividend;
+  }
+
+  // Fallback to Finnhub
+  if (FINNHUB_API_KEY) {
     const finnhubData = await fetchFinnhubDividendData(symbol);
     if (finnhubData && (finnhubData.dividendYield || finnhubData.dividendPerShare)) {
       return finnhubData;
     }
   }
 
-  if (FMP_API_KEY) {
-    const fmpData = await fetchFmpDividendData(symbol);
-    if (fmpData && (fmpData.dividendYield || fmpData.dividendPerShare)) {
-      return fmpData;
-    }
-  }
-
-  // Fallback to Finnhub for US stocks
-  if (!isEuropean && FINNHUB_API_KEY) {
-    return await fetchFinnhubDividendData(symbol);
+  // Fallback to FMP for US stocks only
+  if (FMP_API_KEY && !isEuropeanSymbol(symbol)) {
+    return await fetchFmpDividendData(symbol);
   }
 
   return null;
@@ -413,7 +427,7 @@ async function fetchFinnhubDividendData(symbol: string): Promise<DividendData | 
       dividendYield: metric.dividendYieldIndicatedAnnual ?? null,
       dividendPerShare: metric.dividendPerShareAnnual ?? null,
       payoutRatio: metric.payoutRatioAnnual ?? null,
-      exDividendDate: null, // Finnhub doesn't provide this in basic metrics
+      exDividendDate: null,
       paymentDate: null,
       dividendGrowth5Y: metric.dividendGrowthRate5Y ?? null,
       consecutiveYears: null,
@@ -421,6 +435,131 @@ async function fetchFinnhubDividendData(symbol: string): Promise<DividendData | 
   } catch (e) {
     console.error('Finnhub dividend error:', e);
     return null;
+  }
+}
+
+// Yahoo Finance quoteSummary for fundamental data (works for all stocks)
+interface YahooSummaryDetail {
+  dividendYield?: { raw: number };
+  dividendRate?: { raw: number };
+  exDividendDate?: { raw: number };
+  payoutRatio?: { raw: number };
+  trailingPE?: { raw: number };
+  forwardPE?: { raw: number };
+  priceToBook?: { raw: number };
+}
+
+interface YahooFinancialData {
+  profitMargins?: { raw: number };
+  operatingMargins?: { raw: number };
+  grossMargins?: { raw: number };
+  returnOnEquity?: { raw: number };
+  returnOnAssets?: { raw: number };
+  revenueGrowth?: { raw: number };
+  earningsGrowth?: { raw: number };
+  totalRevenue?: { raw: number };
+  grossProfits?: { raw: number };
+  ebitda?: { raw: number };
+  totalDebt?: { raw: number };
+  totalCash?: { raw: number };
+  operatingCashflow?: { raw: number };
+  freeCashflow?: { raw: number };
+}
+
+interface YahooDefaultKeyStatistics {
+  pegRatio?: { raw: number };
+  priceToBook?: { raw: number };
+  profitMargins?: { raw: number };
+  enterpriseToRevenue?: { raw: number };
+  enterpriseToEbitda?: { raw: number };
+}
+
+interface YahooQuoteSummary {
+  quoteSummary?: {
+    result?: [{
+      summaryDetail?: YahooSummaryDetail;
+      financialData?: YahooFinancialData;
+      defaultKeyStatistics?: YahooDefaultKeyStatistics;
+    }];
+    error?: unknown;
+  };
+}
+
+function hasValidKeyMetrics(metrics: FinancialStatements['keyMetrics']): boolean {
+  return !!(
+    metrics.grossMargin ||
+    metrics.operatingMargin ||
+    metrics.netMargin ||
+    metrics.roe ||
+    metrics.roa
+  );
+}
+
+async function fetchYahooFundamentals(symbol: string): Promise<{
+  dividend: DividendData | null;
+  financials: FinancialStatements | null;
+  valuation: Partial<ValuationData>;
+}> {
+  try {
+    const modules = 'summaryDetail,financialData,defaultKeyStatistics';
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules}`;
+    const response = await proxiedFetch(url);
+
+    if (!response.ok) {
+      return { dividend: null, financials: null, valuation: {} };
+    }
+
+    const data: YahooQuoteSummary = await response.json();
+    const result = data.quoteSummary?.result?.[0];
+
+    if (!result) {
+      return { dividend: null, financials: null, valuation: {} };
+    }
+
+    const summary = result.summaryDetail;
+    const financial = result.financialData;
+    const keyStats = result.defaultKeyStatistics;
+
+    // Extract dividend data
+    const dividend: DividendData | null = (summary?.dividendYield?.raw || summary?.dividendRate?.raw) ? {
+      dividendYield: summary?.dividendYield?.raw ? summary.dividendYield.raw * 100 : null,
+      dividendPerShare: summary?.dividendRate?.raw ?? null,
+      payoutRatio: summary?.payoutRatio?.raw ? summary.payoutRatio.raw * 100 : null,
+      exDividendDate: summary?.exDividendDate?.raw
+        ? new Date(summary.exDividendDate.raw * 1000).toISOString().split('T')[0]
+        : null,
+      paymentDate: null,
+      dividendGrowth5Y: null,
+      consecutiveYears: null,
+    } : null;
+
+    // Extract financial metrics
+    const financials: FinancialStatements | null = financial ? {
+      incomeStatements: [],
+      balanceSheets: [],
+      cashFlows: [],
+      keyMetrics: {
+        grossMargin: financial.grossMargins?.raw ? financial.grossMargins.raw * 100 : null,
+        operatingMargin: financial.operatingMargins?.raw ? financial.operatingMargins.raw * 100 : null,
+        netMargin: financial.profitMargins?.raw ? financial.profitMargins.raw * 100 : null,
+        roe: financial.returnOnEquity?.raw ? financial.returnOnEquity.raw * 100 : null,
+        roa: financial.returnOnAssets?.raw ? financial.returnOnAssets.raw * 100 : null,
+        revenueGrowth3Y: financial.revenueGrowth?.raw ? financial.revenueGrowth.raw * 100 : null,
+        epsGrowth3Y: financial.earningsGrowth?.raw ? financial.earningsGrowth.raw * 100 : null,
+      },
+    } : null;
+
+    // Extract valuation data
+    const valuation: Partial<ValuationData> = {
+      trailingPE: summary?.trailingPE?.raw ?? null,
+      pegRatio: keyStats?.pegRatio?.raw ?? null,
+      priceToBook: summary?.priceToBook?.raw ?? keyStats?.priceToBook?.raw ?? null,
+    };
+
+    return { dividend, financials, valuation };
+  } catch (e) {
+    console.error('Yahoo fundamentals error:', e);
+    return { dividend: null, financials: null, valuation: {} };
   }
 }
 
@@ -512,11 +651,17 @@ interface FmpRatios {
 }
 
 export async function fetchFinancialStatements(symbol: string): Promise<FinancialStatements | null> {
-  // For European stocks, use Finnhub directly (FMP requires premium for non-US)
   const isEuropean = isEuropeanSymbol(symbol);
 
-  if (!FMP_API_KEY || isEuropean) {
-    // Try Finnhub for basic metrics
+  // For European stocks or if no FMP key, try Yahoo Finance first
+  if (isEuropean || !FMP_API_KEY) {
+    // Try Yahoo Finance for key metrics (works for all stocks)
+    const yahooData = await getCachedYahooFundamentals(symbol);
+    if (yahooData.financials && hasValidKeyMetrics(yahooData.financials.keyMetrics)) {
+      return yahooData.financials;
+    }
+
+    // Fallback to Finnhub for basic metrics
     return await fetchFinnhubFinancialData(symbol);
   }
 
