@@ -16,6 +16,9 @@ export function DividendSection({ dividend, currencySymbol }: DividendSectionPro
           <p className="text-slate-400 text-sm">
             Données de dividendes non disponibles pour cette action
           </p>
+          <p className="text-slate-500 text-xs mt-2">
+            Les APIs gratuites ne couvrent pas les fondamentaux des actions européennes
+          </p>
         </div>
       </div>
     );
