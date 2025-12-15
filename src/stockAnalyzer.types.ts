@@ -81,12 +81,21 @@ export interface ValuationVerdict {
   explanation: string;
 }
 
+export interface ChartData {
+  dates: string[];
+  opens: number[];
+  highs: number[];
+  lows: number[];
+  closes: number[];
+}
+
 export interface FullAnalysis {
   stock: StockData;
   indicators: TechnicalIndicators;
   valuation: ValuationData;
   valuationVerdict: ValuationVerdict;
   analysis: Analysis;
+  chartData: ChartData;
 }
 
 export interface PriceData {
