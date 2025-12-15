@@ -6,6 +6,7 @@ import type {
   FullAnalysis,
   Currency,
   ValuationData,
+  ChartData,
 } from './stockAnalyzer.types';
 import {
   fetchDailyPrices,
@@ -128,9 +129,19 @@ export function useStockAnalysis(): UseStockAnalysisReturn {
 
         const valuationVerdict = calculateValuationVerdict(valuation);
 
+        // Données pour le graphique (converties en devise cible)
+        const convertedOpens = priceData.opens.map((o) => o * exchangeRate);
+        const chartData: ChartData = {
+          dates,
+          opens: convertedOpens,
+          highs: convertedHighs,
+          lows: convertedLows,
+          closes: convertedCloses,
+        };
+
         setProgress('Analyse IA...');
         const aiAnalysis = await analyzeWithGroq(stock, indicators);
-        setAnalysis({ stock, indicators, valuation, valuationVerdict, analysis: aiAnalysis });
+        setAnalysis({ stock, indicators, valuation, valuationVerdict, analysis: aiAnalysis, chartData });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erreur');
       } finally {
