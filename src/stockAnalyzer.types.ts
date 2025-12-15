@@ -89,6 +89,61 @@ export interface ChartData {
   closes: number[];
 }
 
+export interface DividendData {
+  dividendYield: number | null;
+  dividendPerShare: number | null;
+  payoutRatio: number | null;
+  exDividendDate: string | null;
+  paymentDate: string | null;
+  dividendGrowth5Y: number | null;
+  consecutiveYears: number | null;
+}
+
+export interface IncomeStatementData {
+  year: string;
+  revenue: number;
+  netIncome: number;
+  grossProfit: number;
+  operatingIncome: number;
+  eps: number;
+  revenueGrowth: number | null;
+  netIncomeGrowth: number | null;
+}
+
+export interface BalanceSheetData {
+  year: string;
+  totalAssets: number;
+  totalLiabilities: number;
+  totalEquity: number;
+  totalDebt: number;
+  cash: number;
+  debtToEquity: number | null;
+  currentRatio: number | null;
+}
+
+export interface CashFlowData {
+  year: string;
+  operatingCashFlow: number;
+  capitalExpenditure: number;
+  freeCashFlow: number;
+  dividendsPaid: number;
+}
+
+export interface FinancialStatements {
+  incomeStatements: IncomeStatementData[];
+  balanceSheets: BalanceSheetData[];
+  cashFlows: CashFlowData[];
+  keyMetrics: {
+    grossMargin: number | null;
+    operatingMargin: number | null;
+    netMargin: number | null;
+    roe: number | null;
+    roa: number | null;
+    revenueGrowth3Y: number | null;
+    epsGrowth3Y: number | null;
+  };
+}
+
 export interface FullAnalysis {
   stock: StockData;
   indicators: TechnicalIndicators;
@@ -96,6 +151,8 @@ export interface FullAnalysis {
   valuationVerdict: ValuationVerdict;
   analysis: Analysis;
   chartData: ChartData;
+  dividend: DividendData | null;
+  financials: FinancialStatements | null;
 }
 
 export interface PriceData {
